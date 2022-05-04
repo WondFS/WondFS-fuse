@@ -2,7 +2,7 @@ mod gc;
 mod kv;
 mod buf;
 mod raw;
-mod vfs;
+mod fuse;
 mod core;
 mod driver;
 mod util;
