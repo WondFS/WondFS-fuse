@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "sffs"
+name = "WondFS-fuse"
 version = "0.1.0"
