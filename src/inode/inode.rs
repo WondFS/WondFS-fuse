@@ -12,6 +12,7 @@ pub enum InodeFileType {
     HardLink,
 }
 
+#[derive(Copy, Clone)]
 pub struct InodeStat {
     pub file_type: InodeFileType,
     pub ino: u32,

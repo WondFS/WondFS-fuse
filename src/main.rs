@@ -13,5 +13,5 @@ mod fake_proc;
 mod super_stat;
 
 fn main() {
-    println!("Hello, world!");
+    
 }
