@@ -7,6 +7,7 @@ use std::os::unix::prelude::OsStrExt;
 use std::time::Duration;
 use libc::ENOENT;
 use std::sync::Arc;
+use crate::inode::inode;
 use crate::common::{file_table, path, directory};
 use crate::fuse::fuse_helper::*;
 
@@ -158,7 +159,7 @@ impl Filesystem for WondFS {
         reply.ok()
     }
 
-    // Release an open directory
+    // Release an open directory.
     fn releasedir(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _flags: i32, reply: ReplyEmpty) {
         let ino = _ino as u32;
         let inode = self.file_table.inode_manager.i_get(ino);
@@ -173,14 +174,56 @@ impl Filesystem for WondFS {
 
     // Create a file node.
     fn mknod(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, _mode: u32, _umask: u32, _rdev: u32, reply: ReplyEntry) {
-        
+        let parent = _parent as u32;
+        let name = _name.to_str().unwrap().to_string();
+        let parent_inode = self.file_table.inode_manager.i_get(parent);
+        if directory::dir_lookup(parent_inode.as_ref().unwrap(), name).is_some() {
+            reply.error(libc::ENOENT);
+            return;
+        }
+        let mut inode = self.file_table.inode_manager.i_alloc();
+        if inode.is_none() {
+            reply.error(libc::ENOENT);
+            return;
+        }
+        let ino = inode.as_ref().unwrap().borrow().ino;
+        let mut stat = inode.as_ref().unwrap().borrow().get_stat();
+        stat.file_type = inode::InodeFileType::Directory;
+        inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
+        directory::dir_link(inode.as_mut().unwrap(), ino, ".".to_string());
+        directory::dir_link(inode.as_mut().unwrap(), parent, "..".to_string());
+        let stat = inode.as_ref().unwrap().borrow().get_stat();
+        let attr = transfer_stat_to_attr(stat);
+        self.file_table.inode_manager.i_put(parent_inode.unwrap());
+        self.file_table.inode_manager.i_put(inode.unwrap());
+        reply.entry(&TTL, &attr, 0);
     }
 
     // Create a directory.
     fn mkdir(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, _mode: u32, _umask: u32, reply: ReplyEntry) {
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
-
+        let parent_inode = self.file_table.inode_manager.i_get(parent);
+        if directory::dir_lookup(parent_inode.as_ref().unwrap(), name).is_some() {
+            reply.error(libc::ENOENT);
+            return;
+        }
+        let mut inode = self.file_table.inode_manager.i_alloc();
+        if inode.is_none() {
+            reply.error(libc::ENOENT);
+            return;
+        }
+        let ino = inode.as_ref().unwrap().borrow().ino;
+        let mut stat = inode.as_ref().unwrap().borrow().get_stat();
+        stat.file_type = inode::InodeFileType::Directory;
+        inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
+        directory::dir_link(inode.as_mut().unwrap(), ino, ".".to_string());
+        directory::dir_link(inode.as_mut().unwrap(), parent, "..".to_string());
+        let stat = inode.as_ref().unwrap().borrow().get_stat();
+        let attr = transfer_stat_to_attr(stat);
+        self.file_table.inode_manager.i_put(parent_inode.unwrap());
+        self.file_table.inode_manager.i_put(inode.unwrap());
+        reply.entry(&TTL, &attr, 0);
     }
 
     // Create a hard link.
@@ -268,7 +311,14 @@ impl Filesystem for WondFS {
 
     // Remove a directory.
     fn rmdir(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEmpty) {
-        
+        let parent = _parent as u32;
+        let name = _name.to_str().unwrap().to_string();
+
+    }
+
+    // Rename a file.
+    fn rename(&mut self, _req: &Request<'_>, _parent: u64, _name: &OsStr, _newparent: u64, _newname: &OsStr, _flags: u32, reply: ReplyEmpty) {
+
     }
 
     // Open a file.
@@ -284,8 +334,6 @@ impl Filesystem for WondFS {
     // Open a directory.
     fn opendir(&mut self, _req: &Request<'_>, _ino: u64, _flags: i32, reply: ReplyOpen) {
         
-    }
-
-
+    }    
 
 }
