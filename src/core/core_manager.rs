@@ -500,8 +500,7 @@ impl CoreManager {
         match raw_inode.file_type {
             0 => file_type = inode::InodeFileType::File,
             1 => file_type = inode::InodeFileType::Directory,
-            2 => file_type = inode::InodeFileType::SoftLink,
-            _ => file_type = inode::InodeFileType::HardLink,
+            _ => panic!("CoreManager: transfer raw inode not available file type"),
         }
         for entry in raw_inode.data.iter() {
             let entry = inode::InodeEntry {
@@ -514,7 +513,6 @@ impl CoreManager {
             data.push(entry);
         }
         inode::Inode {
-            valid: true,
             ino: raw_inode.ino,
             size: raw_inode.size,
             uid: raw_inode.uid,
@@ -525,6 +523,10 @@ impl CoreManager {
             core: None,
             file_type,
             data,
+            mode: todo!(),
+            last_accessed: todo!(),
+            last_modified: todo!(),
+            last_metadata_changed: todo!(),
         }
     }
     
@@ -535,8 +537,6 @@ impl CoreManager {
         match inode.file_type {
             inode::InodeFileType::File => file_type = 0,
             inode::InodeFileType::Directory => file_type = 1,
-            inode::InodeFileType::SoftLink => file_type = 2,
-            inode::InodeFileType::HardLink => file_type = 3,
         }
         for entry in inode.data.iter() {
             let entry = raw_inode::RawEntry {
@@ -556,6 +556,10 @@ impl CoreManager {
             ref_cnt: inode.ref_cnt,
             file_type,
             data,
+            mode: inode.mode,
+            last_accessed: inode.last_accessed,
+            last_modified: inode.last_modified,
+            last_metadata_changed: inode.last_metadata_changed,
         }
     }
 
@@ -797,6 +801,10 @@ mod test {
             ref_cnt: 3,
             file_type: 1,
             data: vec![],
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         };
         let inode = CoreManager::transfer_raw_inode_to_inode(&raw_inode);
         assert_eq!(inode.file_type, inode::InodeFileType::Directory);

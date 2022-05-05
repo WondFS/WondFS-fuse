@@ -1,39 +1,39 @@
-// //
-// // File-system system calls.
-// //
+// // //
+// // // File-system system calls.
+// // //
 
-use std::sync::Arc;
-use crate::fake_proc;
-use crate::inode::inode;
-use crate::common::path;
-use crate::common::directory;
-use crate::common::file_table;
-use crate::inode::inode_manager;
+// use std::sync::Arc;
+// use crate::fake_proc;
+// use crate::inode::inode;
+// use crate::common::path;
+// use crate::common::directory;
+// use crate::common::file_table;
+// use crate::inode::inode_manager;
 
-// fetch system call argument as a file descriptor
-// and return both the descriptor and the corresoinding struct file.
-pub fn arg_fd() -> Option<(u32, file_table::FileLink)> {
-    let fd = 0;
-    let proc = fake_proc::my_proc();
-    let mut file = None;
-    if fd < 0 || fd >= proc.max_file || proc.file[fd as usize].is_none()  {
-        return None;
-    }
-    file = Some(Arc::clone(&proc.file[fd as usize].as_ref().unwrap()));
-    Some((fd as u32, file.unwrap()))
-}
+// // fetch system call argument as a file descriptor
+// // and return both the descriptor and the corresoinding struct file.
+// pub fn arg_fd() -> Option<(u32, file_table::FileLink)> {
+//     let fd = 0;
+//     let proc = fake_proc::my_proc();
+//     let mut file = None;
+//     if fd < 0 || fd >= proc.max_file || proc.file[fd as usize].is_none()  {
+//         return None;
+//     }
+//     file = Some(Arc::clone(&proc.file[fd as usize].as_ref().unwrap()));
+//     Some((fd as u32, file.unwrap()))
+// }
 
-// Allocate a file descriptor for the given file.
-pub fn fdalloc(file: file_table::FileLink) -> i32 {
-    let mut proc = fake_proc::my_proc();
-    for fd in 0..proc.max_file {
-        if proc.file[fd as usize].is_none() {
-            proc.file[fd as usize] = Some(file);
-            return fd as i32;
-        }
-    }
-    -1
-}
+// // Allocate a file descriptor for the given file.
+// pub fn fdalloc(file: file_table::FileLink) -> i32 {
+//     let mut proc = fake_proc::my_proc();
+//     for fd in 0..proc.max_file {
+//         if proc.file[fd as usize].is_none() {
+//             proc.file[fd as usize] = Some(file);
+//             return fd as i32;
+//         }
+//     }
+//     -1
+// }
 
 // pub fn sys_dup() -> i32 {
 //     let mut proc = fake_proc::my_proc();

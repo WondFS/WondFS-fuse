@@ -124,6 +124,10 @@ mod test {
             gid: 44,
             ref_cnt: 0,
             n_link: 1,
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         };
         link.as_ref().unwrap().borrow_mut().modify_stat(stat);
         directory::dir_link(link.as_mut().unwrap(), 2, "test1.txt".to_string());
@@ -138,6 +142,10 @@ mod test {
             gid: 44,
             ref_cnt: 0,
             n_link: 1,
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         };
         link.as_ref().unwrap().borrow_mut().modify_stat(stat);
         directory::dir_link(link.as_mut().unwrap(), 5, "test4.txt".to_string());

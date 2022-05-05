@@ -7,40 +7,23 @@ use std::os::unix::prelude::OsStrExt;
 use std::time::Duration;
 use libc::ENOENT;
 use std::sync::Arc;
-use crate::inode::inode;
+use crate::inode::{inode, inode_manager};
 use crate::common::{file_table, path, directory};
 use crate::fuse::fuse_helper::*;
 
 const TTL: Duration = Duration::from_secs(1); // 1 second
 
 pub struct WondFS {
-    pub file: Vec<Option<file_table::FileLink>>,
-    pub max_file: u32,
-    pub file_table: file_table::FileTable,
+    pub inode_manager: inode_manager::InodeManager,
 }
 
 impl WondFS {
     pub fn new() -> WondFS {
-        let mut file = vec![];
-        for _ in 0..30 {
-            file.push(None);
-        }
-        let table = file_table::FileTable::new();
-        table.inode_manager.core_manager.borrow_mut().mount();
+        let manager = inode_manager::InodeManager::new();
+        manager.core_manager.borrow_mut().mount();
         WondFS {
-            file,
-            max_file: 16,
-            file_table: table,
+            inode_manager: manager,
         }
-    }
-
-    pub fn arg_fd(&self, fd: u32) -> Option<file_table::FileLink> {
-        let mut file = None;
-        if fd < 0 || fd >= self.max_file || self.file[fd as usize].is_none()  {
-            return None;
-        }
-        file = Some(Arc::clone(&self.file[fd as usize].as_ref().unwrap()));
-        Some(file.unwrap())
     }
 }
 
@@ -50,7 +33,7 @@ impl Filesystem for WondFS {
     fn lookup(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEntry) {
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
-        let parent_inode = self.file_table.inode_manager.i_get(parent);
+        let parent_inode = self.inode_manager.i_get(parent);
         if parent_inode.is_none() {
             reply.error(ENOENT);
             return;
@@ -60,27 +43,27 @@ impl Filesystem for WondFS {
             reply.error(ENOENT);
             return;
         }
-        let inode = self.file_table.inode_manager.i_get(ino.unwrap().1 as u32);
+        let inode = self.inode_manager.i_get(ino.unwrap().1 as u32);
         if inode.is_none() {
             reply.error(ENOENT);
             return;
         }
         let stat = inode.as_ref().unwrap().borrow().get_stat();
         let attr = transfer_stat_to_attr(stat);
-        self.file_table.inode_manager.i_put(parent_inode.unwrap());
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(parent_inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         reply.entry(&TTL, &attr, 0);
     }
 
     // Get file attributes.
     fn getattr(&mut self, _req: &Request<'_>, _ino: u64, reply: ReplyAttr) {
         let ino = _ino as u32;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         match inode {
             Some(inode) => {
                 let stat = inode.borrow().get_stat();
                 let attr = transfer_stat_to_attr(stat);
-                self.file_table.inode_manager.i_put(inode);
+                self.inode_manager.i_put(inode);
                 reply.attr(&TTL, &attr);
             },
             None => reply.error(ENOENT),
@@ -97,13 +80,13 @@ impl Filesystem for WondFS {
         let ino =  _ino as u32;
         let offset = _offset as u32;
         let size = _size as u32;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         match inode {
             Some(inode) => {
                 let mut data = vec![]; 
                 let ret = inode.borrow_mut().read(offset, size, &mut data);
                 if ret >= 0 {
-                    self.file_table.inode_manager.i_put(inode);
+                    self.inode_manager.i_put(inode);
                     reply.data(&data[0..]);
                 } else {
                     reply.error(ENOENT);
@@ -118,11 +101,11 @@ impl Filesystem for WondFS {
         let ino = _ino as u32;
         let offset = _offset as u32;
         let data = _data;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         match inode {
             Some(inode) => {
                 let ret = inode.borrow_mut().write(offset, data.len() as u32, &data.to_vec());
-                self.file_table.inode_manager.i_put(inode);
+                self.inode_manager.i_put(inode);
                 if ret {
                     reply.written(data.len() as u32);
                 } else {
@@ -137,7 +120,7 @@ impl Filesystem for WondFS {
     fn readdir(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _offset: i64, mut reply: ReplyDirectory) {
         let ino = _ino as u32;
         let offset = _offset as i32;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             reply.error(ENOENT);
             return;
@@ -162,13 +145,13 @@ impl Filesystem for WondFS {
     // Release an open directory.
     fn releasedir(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _flags: i32, reply: ReplyEmpty) {
         let ino = _ino as u32;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             reply.error(ENOENT);
             return;
         }
         inode.as_ref().unwrap().borrow_mut().ref_cnt -= 1;
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         reply.ok();
     }
 
@@ -176,12 +159,12 @@ impl Filesystem for WondFS {
     fn mknod(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, _mode: u32, _umask: u32, _rdev: u32, reply: ReplyEntry) {
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
-        let parent_inode = self.file_table.inode_manager.i_get(parent);
+        let parent_inode = self.inode_manager.i_get(parent);
         if directory::dir_lookup(parent_inode.as_ref().unwrap(), name).is_some() {
             reply.error(libc::ENOENT);
             return;
         }
-        let mut inode = self.file_table.inode_manager.i_alloc();
+        let mut inode = self.inode_manager.i_alloc();
         if inode.is_none() {
             reply.error(libc::ENOENT);
             return;
@@ -194,8 +177,8 @@ impl Filesystem for WondFS {
         directory::dir_link(inode.as_mut().unwrap(), parent, "..".to_string());
         let stat = inode.as_ref().unwrap().borrow().get_stat();
         let attr = transfer_stat_to_attr(stat);
-        self.file_table.inode_manager.i_put(parent_inode.unwrap());
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(parent_inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         reply.entry(&TTL, &attr, 0);
     }
 
@@ -203,12 +186,12 @@ impl Filesystem for WondFS {
     fn mkdir(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, _mode: u32, _umask: u32, reply: ReplyEntry) {
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
-        let parent_inode = self.file_table.inode_manager.i_get(parent);
+        let parent_inode = self.inode_manager.i_get(parent);
         if directory::dir_lookup(parent_inode.as_ref().unwrap(), name).is_some() {
             reply.error(libc::ENOENT);
             return;
         }
-        let mut inode = self.file_table.inode_manager.i_alloc();
+        let mut inode = self.inode_manager.i_alloc();
         if inode.is_none() {
             reply.error(libc::ENOENT);
             return;
@@ -221,8 +204,8 @@ impl Filesystem for WondFS {
         directory::dir_link(inode.as_mut().unwrap(), parent, "..".to_string());
         let stat = inode.as_ref().unwrap().borrow().get_stat();
         let attr = transfer_stat_to_attr(stat);
-        self.file_table.inode_manager.i_put(parent_inode.unwrap());
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(parent_inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         reply.entry(&TTL, &attr, 0);
     }
 
@@ -231,12 +214,12 @@ impl Filesystem for WondFS {
         let ino = _ino as u32;
         let newparent = _newparent as u32;
         let newname = _newname.to_str().unwrap().to_string();
-        let mut parent_inode = self.file_table.inode_manager.i_get(newparent);
+        let mut parent_inode = self.inode_manager.i_get(newparent);
         if parent_inode.is_none() {
             reply.error(ENOENT);
             return;
         }
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             reply.error(ENOENT);
             return;
@@ -253,8 +236,8 @@ impl Filesystem for WondFS {
             reply.error(ENOENT);
             return;
         }
-        self.file_table.inode_manager.i_put(parent_inode.unwrap());
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(parent_inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         let attr = transfer_stat_to_attr(stat);
         reply.entry(&TTL, &attr, 0);
     }
@@ -263,7 +246,7 @@ impl Filesystem for WondFS {
     fn unlink(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEmpty) {
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
-        let mut parent_inode = self.file_table.inode_manager.i_get(parent);
+        let mut parent_inode = self.inode_manager.i_get(parent);
         if parent_inode.is_none() {
             reply.error(ENOENT);
             return;
@@ -274,7 +257,7 @@ impl Filesystem for WondFS {
             return;
         }
         let ino = ino.unwrap().1 as u32;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             reply.error(ENOENT);
             return;
@@ -291,21 +274,21 @@ impl Filesystem for WondFS {
             reply.error(ENOENT);
             return;
         }
-        self.file_table.inode_manager.i_put(parent_inode.unwrap());
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(parent_inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         reply.ok();
     }
 
     // Release an open file.
     fn release(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _flags: i32, _lock_owner: Option<u64>, _flush: bool, reply: ReplyEmpty) {
         let ino = _ino as u32;
-        let inode = self.file_table.inode_manager.i_get(ino);
+        let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             reply.error(ENOENT);
             return;
         }
         inode.as_ref().unwrap().borrow_mut().ref_cnt -= 1;
-        self.file_table.inode_manager.i_put(inode.unwrap());
+        self.inode_manager.i_put(inode.unwrap());
         reply.ok();
     }
 

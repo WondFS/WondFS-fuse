@@ -49,6 +49,10 @@ pub fn transfer_attr_to_stat(attr: FileAttr) -> inode::InodeStat {
         gid: 0,
         ref_cnt: 0,
         n_link: 0,
+        mode: todo!(),
+        last_accessed: todo!(),
+        last_modified: todo!(),
+        last_metadata_changed: todo!(),
     }
 }
 
@@ -123,9 +127,9 @@ fn as_file_kind(mut mode: u32) -> FileKind {
     }
 }
 
-// fn creation_gid(parent: &InodeAttributes, gid: u32) -> u32 {
-//     if parent.mode & libc::S_ISGID as u16 != 0 {
-//         return parent.gid;
-//     }
-//     gid
-// }
+fn creation_gid(parent: &inode::InodeStat, gid: u32) -> u32 {
+    if parent.mode & libc::S_ISGID as u16 != 0 {
+        return parent.gid;
+    }
+    gid
+}

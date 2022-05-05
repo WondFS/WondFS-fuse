@@ -8,8 +8,6 @@ use super::inode_manager;
 pub enum InodeFileType {
     File,
     Directory,
-    SoftLink,
-    HardLink,
 }
 
 #[derive(Copy, Clone)]
@@ -17,10 +15,14 @@ pub struct InodeStat {
     pub file_type: InodeFileType,
     pub ino: u32,
     pub size: u32,
-    pub uid: u32,
-    pub gid: u16,
     pub ref_cnt: u8,
     pub n_link: u8,
+    pub mode: u16,
+    pub uid: u32,
+    pub gid: u32,
+    pub last_accessed: (i64, u32),
+    pub last_modified: (i64, u32),
+    pub last_metadata_changed: (i64, u32),
 }
 
 #[derive(Copy, Clone)]
@@ -33,14 +35,17 @@ pub struct InodeEntry {
 }
 
 pub struct Inode {
-    pub valid: bool,
     pub file_type: InodeFileType,
     pub ino: u32,
     pub size: u32,
-    pub uid: u32,
-    pub gid: u16,
     pub ref_cnt: u8,
     pub n_link: u8,
+    pub mode: u16,
+    pub uid: u32,
+    pub gid: u32,
+    pub last_accessed: (i64, u32),
+    pub last_modified: (i64, u32),
+    pub last_metadata_changed: (i64, u32),
     pub lock: Mutex<bool>,
     pub data: Vec<InodeEntry>,
     pub core: Option<inode_manager::CoreLink>,
@@ -56,10 +61,13 @@ impl Inode {
             gid: 0,
             n_link: 0,
             data: vec![],
-            valid: false,
             ref_cnt: 0,
             lock: Mutex::new(false),
             core: None,
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         }
     }
 
@@ -389,6 +397,10 @@ impl Inode {
             gid: self.gid,
             ref_cnt: self.ref_cnt,
             n_link: self.n_link,
+            mode: self.mode,
+            last_accessed: self.last_accessed,
+            last_modified: self.last_modified,
+            last_metadata_changed: self.last_metadata_changed,
         }
     }
 
@@ -424,6 +436,10 @@ impl Inode {
             gid: self.gid,
             ref_cnt: self.ref_cnt,
             n_link: self.n_link + 1,
+            mode: self.mode,
+            last_accessed: self.last_accessed,
+            last_modified: self.last_modified,
+            last_metadata_changed: self.last_metadata_changed,
         };
         self.modify_stat(stat)
     }
@@ -471,7 +487,6 @@ impl Inode {
     }
 
     pub fn update_by_another_inode(&mut self, inode: Inode) {
-        self.valid = inode.valid;
         self.file_type = inode.file_type;
         self.ino = inode.ino;
         self.size = inode.size;
@@ -491,10 +506,13 @@ impl Inode {
             gid: self.gid,
             n_link: self.n_link,
             data: self.data.clone(),
-            valid: self.valid,
             ref_cnt: self.ref_cnt,
             lock: Mutex::new(false),
             core: None,
+            mode: self.mode,
+            last_accessed: self.last_accessed,
+            last_modified: self.last_modified,
+            last_metadata_changed: self.last_metadata_changed,
         }
     }
 
@@ -508,7 +526,6 @@ impl Inode {
 
 #[cfg(test)]
 mod test {
-    use std::sync::Arc;
     use crate::inode::inode_manager;
     use super::*;
 
@@ -633,6 +650,10 @@ mod test {
             gid: 44,
             ref_cnt: 10,
             n_link: 10,
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         };
         link.as_ref().unwrap().borrow_mut().modify_stat(stat);
         let link = link.as_ref().unwrap().borrow_mut().core.as_mut().unwrap().borrow_mut().get_inode(1);

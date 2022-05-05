@@ -114,6 +114,6 @@ pub struct ModifyInodeStatInodeEvent {
     pub ino: u32,
     pub size: u32,
     pub uid: u32,
-    pub gid: u16,
+    pub gid: u32,
     pub n_link: u8,
 }

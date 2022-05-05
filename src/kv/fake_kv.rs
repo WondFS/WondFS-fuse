@@ -32,6 +32,10 @@ impl FakeKV {
             n_link: raw_inode.n_link,
             ref_cnt: raw_inode.ref_cnt,
             file_type: raw_inode.file_type,
+            mode: todo!(),
+            last_accessed: todo!(),
+            last_modified: todo!(),
+            last_metadata_changed: todo!(),
         }
     }
 
@@ -62,6 +66,10 @@ impl FakeKV {
             ref_cnt: 0,
             file_type: 0,
             data: vec![],
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         };
         self.map.insert(ino, raw_inode);
         let raw_inode = raw_inode::RawInode {
@@ -73,6 +81,10 @@ impl FakeKV {
             ref_cnt: 0,
             file_type: 0,
             data: vec![],
+            mode: 0,
+            last_accessed: (0, 0),
+            last_modified: (0, 0),
+            last_metadata_changed: (0, 0),
         };
         raw_inode
     }
