@@ -3,18 +3,14 @@ use fuser::*;
 use std::time::{UNIX_EPOCH, SystemTime, Duration};
 use crate::inode::inode;
 
-enum FileKind {
-    File,
-    Directory,
-    Symlink,
-}
+pub const FILE_HANDLE_READ_BIT: u64 = 1 << 63;
+pub const FILE_HANDLE_WRITE_BIT: u64 = 1 << 62;
 
-impl From<FileKind> for fuser::FileType {
-    fn from(kind: FileKind) -> Self {
+impl From<inode::InodeFileType> for fuser::FileType {
+    fn from(kind: inode::InodeFileType) -> Self {
         match kind {
-            FileKind::File => fuser::FileType::RegularFile,
-            FileKind::Directory => fuser::FileType::Directory,
-            FileKind::Symlink => fuser::FileType::Symlink,
+            inode::InodeFileType::File => fuser::FileType::RegularFile,
+            inode::InodeFileType::Directory => fuser::FileType::Directory,
         }
     }
 }
@@ -113,23 +109,33 @@ pub fn check_access(
     return access_mask == 0;
 }
 
-fn as_file_kind(mut mode: u32) -> FileKind {
+pub fn as_file_kind(mut mode: u32) -> inode::InodeFileType {
     mode &= libc::S_IFMT as u32;
 
     if mode == libc::S_IFREG as u32 {
-        return FileKind::File;
-    } else if mode == libc::S_IFLNK as u32 {
-        return FileKind::Symlink;
+        return inode::InodeFileType::File;
     } else if mode == libc::S_IFDIR as u32 {
-        return FileKind::Directory;
+        return inode::InodeFileType::Directory;
     } else {
         unimplemented!("{}", mode);
     }
 }
 
-fn creation_gid(parent: &inode::InodeStat, gid: u32) -> u32 {
+pub fn creation_gid(parent: &inode::InodeStat, gid: u32) -> u32 {
     if parent.mode & libc::S_ISGID as u16 != 0 {
         return parent.gid;
     }
     gid
+}
+
+pub fn creation_mode(mode: u32) -> u16 {
+    (mode & !(libc::S_ISUID | libc::S_ISGID) as u32) as u16
+}
+
+pub fn check_file_handle_read(file_handle: u64) -> bool {
+    (file_handle & FILE_HANDLE_READ_BIT) != 0
+}
+
+pub fn check_file_handle_write(file_handle: u64) -> bool {
+    (file_handle & FILE_HANDLE_WRITE_BIT) != 0
 }

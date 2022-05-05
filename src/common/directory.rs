@@ -49,7 +49,7 @@ pub fn dir_link(inode: &mut inode_manager::InodeLink, ino: u32, name: String) ->
 }
 
 // Delete a directory entry (name, ino) into the directory inode.
-pub fn dir_unlink(inode:&mut inode_manager::InodeLink, ino: u32, name: String) -> bool {
+pub fn dir_unlink(inode: &mut inode_manager::InodeLink, ino: u32, name: String) -> bool {
     if !dir_lookup(&inode, name.clone()).is_some() {
         return false;
     }
