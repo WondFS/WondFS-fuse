@@ -32,10 +32,10 @@ impl FakeKV {
             n_link: raw_inode.n_link,
             ref_cnt: raw_inode.ref_cnt,
             file_type: raw_inode.file_type,
-            mode: todo!(),
-            last_accessed: todo!(),
-            last_modified: todo!(),
-            last_metadata_changed: todo!(),
+            mode: raw_inode.mode,
+            last_accessed: raw_inode.last_accessed,
+            last_modified: raw_inode.last_modified,
+            last_metadata_changed: raw_inode.last_metadata_changed,
         }
     }
 

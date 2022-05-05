@@ -17,40 +17,44 @@ impl From<inode::InodeFileType> for fuser::FileType {
 
 pub fn transfer_stat_to_attr(stat: inode::InodeStat) -> FileAttr {
     FileAttr {
-        ino: 1,
-        size: 0,
-        blocks: 0,
-        atime: UNIX_EPOCH, // 1970-01-01 00:00:00
-        mtime: UNIX_EPOCH,
-        ctime: UNIX_EPOCH,
-        crtime: UNIX_EPOCH,
-        kind: FileType::Directory,
-        perm: 0o755,
-        nlink: 2,
-        uid: 501,
-        gid: 20,
+        ino: stat.ino as u64,
+        size: stat.size as u64,
+        blocks: ((stat.size + 512 - 1) / 512) as u64,
+        atime: system_time_from_time(stat.last_accessed.0, stat.last_accessed.1),
+        mtime: system_time_from_time(stat.last_modified.0, stat.last_modified.1),
+        ctime: system_time_from_time(
+            stat.last_metadata_changed.0,
+            stat.last_metadata_changed.1,
+        ),
+        kind: stat.file_type.into(),
+        perm: stat.mode,
+        nlink: stat.n_link as u32,
+        uid: stat.uid,
+        gid: stat.gid,
         rdev: 0,
         flags: 0,
         blksize: 512,
         padding: 0,
+        crtime: SystemTime::UNIX_EPOCH,
     }
 }
 
-pub fn transfer_attr_to_stat(attr: FileAttr) -> inode::InodeStat {
-    inode::InodeStat {
-        file_type: inode::InodeFileType::File,
-        ino: 1,
-        size: 0,
-        uid: 0,
-        gid: 0,
-        ref_cnt: 0,
-        n_link: 0,
-        mode: todo!(),
-        last_accessed: todo!(),
-        last_modified: todo!(),
-        last_metadata_changed: todo!(),
-    }
-}
+// pub fn transfer_attr_to_stat(attr: FileAttr) -> inode::InodeStat {
+//     // inode::InodeStat {
+//     //     file_type: attr.into(),
+//     //     ino: attr.ino as u32,
+//     //     size: 0,
+//     //     uid: 0,
+//     //     gid: 0,
+//     //     ref_cnt: 0,
+//     //     n_link: 0,
+//     //     mode: todo!(),
+//     //     last_accessed: todo!(),
+//     //     last_modified: todo!(),
+//     //     last_metadata_changed: todo!(),
+//     // }
+//     todo!()
+// }
 
 pub fn time_now() -> (i64, u32) {
     time_from_system_time(&SystemTime::now())
