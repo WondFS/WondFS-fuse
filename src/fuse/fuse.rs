@@ -11,7 +11,7 @@ use crate::inode::{inode, inode_manager};
 use crate::common::{path, directory};
 use crate::fuse::fuse_helper::*;
 
-const TTL: Duration = Duration::from_secs(1); // 1 second
+const TTL: Duration = Duration::new(0, 0); // 1 second
 
 pub struct WondFS {
     pub inode_manager: inode_manager::InodeManager,
@@ -79,7 +79,7 @@ impl Filesystem for WondFS {
             parent_inode.as_ref().unwrap().borrow().mode,
             _req.uid(),
             _req.gid(),
-            libc::X_OK,
+            libc::R_OK,
         ) {
             debug!("WondFS: lookup no permission to access");
             reply.error(libc::ENOENT);
@@ -91,7 +91,7 @@ impl Filesystem for WondFS {
             reply.error(ENOENT);
             return;
         }
-        let inode = self.inode_manager.i_get(ino.unwrap().1 as u32);
+        let inode = self.inode_manager.i_get(ino.unwrap().0 as u32);
         if inode.is_none() {
             debug!("WondFS: lookup inode not exists");
             reply.error(ENOENT);
@@ -101,6 +101,7 @@ impl Filesystem for WondFS {
         let attr = transfer_stat_to_attr(stat);
         self.inode_manager.i_put(parent_inode.unwrap());
         self.inode_manager.i_put(inode.unwrap());
+        trace!("{:?}", attr);
         reply.entry(&TTL, &attr, 0);
     }
 
@@ -126,6 +127,25 @@ impl Filesystem for WondFS {
 
     // Set file attributes.
     fn setattr(&mut self, _req: &Request<'_>, _ino: u64, _mode: Option<u32>, _uid: Option<u32>, _gid: Option<u32>, _size: Option<u64>, _atime: Option<TimeOrNow>, _mtime: Option<TimeOrNow>, _ctime: Option<std::time::SystemTime>, _fh: Option<u64>, _crtime: Option<std::time::SystemTime>, _chgtime: Option<std::time::SystemTime>, _bkuptime: Option<std::time::SystemTime>, _flags: Option<u32>, reply: ReplyAttr) {
+        trace!("WondFS: mknod funcation called");
+        let ino = _ino as u32;
+        trace!("WondFS: ino: {}, mode: {:?}, uid: {:?}, gid: {:?}, size: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, fh: {:?}, crtime: {:?}, chgtime: {:?}, bkuptime: {:?}, flags: {:?}", ino, _mode, _uid, _gid, _size, _atime, _mtime, _ctime, _fh, _crtime, _chgtime, _bkuptime, _flags);
+        if let Some(mode) = _mode {
+
+        }
+        if _uid.is_some() || _gid.is_some() {
+
+        }
+        if let Some(size) = _size {
+
+        }
+        let now = time_now();
+        if let Some(atime) = _atime {
+
+        }
+        if let Some(mtime) = _mtime {
+
+        }
         reply.error(ENOSYS);
     }
 
@@ -288,7 +308,7 @@ impl Filesystem for WondFS {
             debug!("WondFS: unlink name not exists");
             return;
         }
-        let ino = ino.unwrap().1 as u32;
+        let ino = ino.unwrap().0 as u32;
         let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             debug!("WondFS: unlink inode not exists");
@@ -301,7 +321,7 @@ impl Filesystem for WondFS {
             parent_inode.as_ref().unwrap().borrow().mode,
             _req.uid(),
             _req.gid(),
-            libc::X_OK,
+            libc::W_OK,
         ) {
             debug!("WondFS: unlink no permission to access");
             reply.error(libc::ENOENT);
@@ -358,7 +378,7 @@ impl Filesystem for WondFS {
             reply.error(libc::ENOENT);
             return;
         }
-        let ino = ino.unwrap().1 as u32;
+        let ino = ino.unwrap().0 as u32;
         let inode = self.inode_manager.i_get(ino);
         if inode.is_none() {
             debug!("WondFS: rmdir inode not exists");
@@ -754,7 +774,7 @@ impl Filesystem for WondFS {
             return;
         }
         let ino = inode.as_ref().unwrap().borrow().ino;
-        let mut stat = parent_inode.as_ref().unwrap().borrow().get_stat();
+        let mut stat = inode.as_ref().unwrap().borrow().get_stat();
         let parent_stat = parent_inode.as_ref().unwrap().borrow().get_stat();
         stat.file_type = as_file_kind(_mode);
         stat.size = 0;

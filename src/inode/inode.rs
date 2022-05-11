@@ -405,9 +405,11 @@ impl Inode {
     }
 
     pub fn modify_stat(&mut self, stat: InodeStat) -> bool {
+        // trace!("modify stat function called");
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
         if stat.ino != self.ino {
+            // trace!("{}, {}", stat.ino, self.ino);
             panic!("Inode: modify stat can't change ino");
         }
         if stat.size != self.size {
