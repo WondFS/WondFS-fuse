@@ -1,7 +1,9 @@
 use crate::driver::{disk, fake_disk};
+use crate::tl::tl;
 
 pub struct DiskManager {
     pub is_virtual: bool,
+    pub tl: tl::TranslationLayer,
     pub driver: Option<disk::DiskDriver>,
     pub fake_disk: Option<fake_disk::FakeDisk>,
 }
@@ -19,6 +21,7 @@ impl DiskManager {
             is_virtual,
             driver,
             fake_disk,
+            tl: tl::TranslationLayer::new(),
         }
     }
 

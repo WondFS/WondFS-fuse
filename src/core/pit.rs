@@ -113,7 +113,7 @@ pub struct DataRegion {
 impl DataRegion {
     pub fn new(data: &array::Array2<u8>) -> DataRegion {
         if data.size() != [128, 4096] {
-            panic!("TestRegion: new not matched size");
+            panic!("DataRegion: new not matched size");
         }
         let mut arr = array::Array1::<u8>::new(data.len());
         for (index, byte) in data.iter().enumerate() {
