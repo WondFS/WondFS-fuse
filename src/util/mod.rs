@@ -1,3 +1,4 @@
+pub mod crc32;
 pub mod array;
 pub mod s_array;
 pub mod lru_cache;
