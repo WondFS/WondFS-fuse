@@ -1,3 +1,4 @@
+pub mod ecc;
 pub mod crc32;
 pub mod array;
 pub mod s_array;
