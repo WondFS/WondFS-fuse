@@ -9,7 +9,10 @@ pub enum CheckType {
 pub struct CheckCenter;
 
 impl CheckCenter {
-    pub fn check(data: &[u8; 4096], sa: &[u8; 128]) -> (bool, CheckType, Option<[u8; 4096]>) {
+    pub fn check(data: &[u8; 4096], sa: &Vec<u8>) -> (bool, CheckType, Option<[u8; 4096]>) {
+        if sa.len() != 128 {
+            panic!("CheckCenter: check sa not valid size");
+        }
         let check_type;
         if sa[127] == 0x00 {
             check_type = CheckType::Crc32;
@@ -35,10 +38,24 @@ impl CheckCenter {
         (check_sum == signature, None)
     }
 
-    pub fn sign_crc_32(data: &[u8; 4096]) -> [u8; 128] {
+    pub fn sign(data: &[u8; 4096], address: u32, sign_type: CheckType) -> Vec<u8> {
+        match sign_type {
+            CheckType::Crc32 => {
+                CheckCenter::sign_crc_32(data, address)
+            },
+            CheckType::Ecc => {
+                unimplemented!()
+            },
+        }
+    }
+
+    pub fn sign_crc_32(data: &[u8; 4096], address: u32) -> Vec<u8> {
         let crc = crc32::Crc::<u32>::new(&crc32::CRC_32_ISCSI);
         let check_sum = crc.checksum(data);
-        let mut sa = [0; 128];
+        let mut sa = vec![];
+        for _ in 0..128 {
+            sa.push(0);
+        }
         let byte_1 = (check_sum >> 24) as u8;
         let byte_2 = (check_sum >> 16) as u8;
         let byte_3 = (check_sum >> 8) as u8;
@@ -47,8 +64,28 @@ impl CheckCenter {
         sa[1] = byte_2;
         sa[2] = byte_3;
         sa[3] = byte_4;
+        let byte_1 = (address >> 24) as u8;
+        let byte_2 = (address >> 16) as u8;
+        let byte_3 = (address >> 8) as u8;
+        let byte_4 = address as u8;
+        sa[123] = byte_1;
+        sa[124] = byte_2;
+        sa[125] = byte_3;
+        sa[126] = byte_4;
         sa[127] = 0x00;
         sa
+    }
+
+    pub fn extract_address(signature: &Vec<u8>) -> u32 {
+        if signature.len() != 128 {
+            panic!("CheckCenter: extract address signature not valid size");
+        }
+        let bytes = &signature[123..127];
+        let byte_1 = (bytes[0] as u32) << 24;
+        let byte_2 = (bytes[1] as u32) << 16;
+        let byte_3 = (bytes[2] as u32) << 8;
+        let byte_4 = bytes[3] as u32;
+        byte_1 + byte_2 + byte_3 + byte_4
     }
 }
 
@@ -62,10 +99,11 @@ mod test {
         data[234] = 23;
         data[123] = 78;
         data[89] = 12;
-        let sa = CheckCenter::sign_crc_32(&data);
+        let sa = CheckCenter::sign(&data, 383, CheckType::Crc32);
         let ret = CheckCenter::check(&data, &sa);
         assert_eq!(ret.0, true);
         assert_eq!(ret.1, CheckType::Crc32);
         assert_eq!(ret.2, None);
+        assert_eq!(CheckCenter::extract_address(&sa), 383);
     }
 }
