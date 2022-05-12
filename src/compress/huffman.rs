@@ -4,6 +4,7 @@ use std::collections::{HashMap, hash_map::Iter};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::str;
+use std::time::SystemTime;
 
 type RefHuffmanTree = Rc<RefCell<HuffmanTree>>;
 type Weight = u32;
@@ -144,6 +145,8 @@ impl Display for HuffmanBinaryMap {
 }
 
 pub struct HuffmanCodec {
+    pub coefficient: u8,
+    pub efficiency: u128,
     pub bit_map: HuffmanBinaryMap,
     pub decode_map: DecodeConfig,
 }
@@ -155,16 +158,58 @@ impl HuffmanCodec {
         let bit_map = HuffmanBinaryMap::build(tree);
         let decode_map = DecodeConfig::build(&format!("space:{}\ncapacity:{}\n{}", 0, 0, bit_map));
         Self {
+            coefficient: 1,
+            efficiency: 0,
             bit_map,
             decode_map,
         }
     }
 
-    pub fn encode(source: &String, bit_map: &HuffmanBinaryMap) -> Vec<u8> {
+    pub fn modify_coefficient(&mut self, coeffi: u8) {
+        self.coefficient = (6 * coeffi as u16 / 10 + 4 * self.coefficient as u16 / 10) as u8;
+    }
+
+    pub fn modify_efficiency(&mut self, effi: u128) {
+        self.efficiency = 6 * effi / 10 + 4 * self.efficiency / 10;
+    }
+}
+
+impl compress::Compress for HuffmanCodec {
+    fn decode(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let source = bytes.to_vec();
+        let start_time = SystemTime::now();
+        let mut result = String::with_capacity(self.decode_map.capacity);
+        let bit_str = source.iter()
+            .map(|num| {
+                format!("{u8:>0width$b}", u8=num, width=8)
+            })
+            .collect::<Vec<String>>()
+            .join("");
+        let mut tmp_str = String::with_capacity(20);
+        let last_idx = bit_str.len() - self.decode_map.space as usize;
+        for (i, ch) in bit_str.char_indices() {
+            if i >= last_idx {
+                break;
+            }
+            tmp_str.push(ch);
+            if let Some(mch) = self.decode_map.get(&tmp_str) {
+                result.push(*mch);
+                tmp_str.clear();
+            }
+        }
+        let end_time = SystemTime::now();
+        let duration = end_time.duration_since(start_time).ok().unwrap();
+        self.modify_efficiency(duration.as_micros());
+        result.into_bytes()
+    }
+
+    fn encode(&mut self, bytes: &[u8]) -> Vec<u8> {        
+        let source = std::str::from_utf8(bytes).unwrap().to_string();
+        let start_time = SystemTime::now();
         let mut result: Vec<u8> = vec![];
         let (mut buf, mut count) = (0, 0);
         for (_, ch) in source.char_indices() {
-            let vec = bit_map.inner.get(&ch).unwrap();
+            let vec = self.bit_map.inner.get(&ch).unwrap();
             vec.iter().for_each(|b| {
                 buf <<= 1;
                 if *b { buf |= 1 }
@@ -182,42 +227,11 @@ impl HuffmanCodec {
             buf <<= space;
             result.push(buf);
         }
+        let end_time = SystemTime::now();
+        let duration = end_time.duration_since(start_time).ok().unwrap();
+        self.modify_efficiency(duration.as_micros());
+        self.modify_coefficient((result.len() * 100 / bytes.len()) as u8);
         result
-    }
-
-    pub fn decode(source: &[u8], decode_map: &DecodeConfig) -> String {
-        let mut result = String::with_capacity(decode_map.capacity);
-        let bit_str = source.iter()
-            .map(|num| {
-                format!("{u8:>0width$b}", u8=num, width=8)
-            })
-            .collect::<Vec<String>>()
-            .join("");
-        let mut tmp_str = String::with_capacity(20);
-        let last_idx = bit_str.len() - decode_map.space as usize;
-        for (i, ch) in bit_str.char_indices() {
-            if i >= last_idx {
-                break;
-            }
-            tmp_str.push(ch);
-            if let Some(mch) = decode_map.get(&tmp_str) {
-                result.push(*mch);
-                tmp_str.clear();
-            }
-        }
-        result
-    }
-}
-
-impl compress::Compress for HuffmanCodec {
-    fn decode(&self, bytes: &[u8]) -> Vec<u8> {
-        let source = bytes.to_vec();
-        HuffmanCodec::decode(&source, &self.decode_map).into_bytes()
-    }
-
-    fn encode(&self, bytes: &[u8]) -> Vec<u8> {        
-        let source = std::str::from_utf8(bytes).unwrap().to_string();
-        HuffmanCodec::encode(&source, &self.bit_map)
     }
 }
 
@@ -265,13 +279,8 @@ mod test {
     #[test]
     fn basics() {
         let data = "fsfjlahuhdwnf.v.sljp;jdqdsjdfhalkshdlhliqjfsfjlahuhdwnf.v.sljp;jdqdsjdfhalkshdlhliqjdna,dnlawjdla.jdj.lskd.wnkakadmbDmabdmadahqbdkfsfsknasnwnkdnsnsckwkcwjlkrjflqwjclamlqwdjwlfdjlamflcmljwijrlqflkmlkmlam;c;wk;rk;qkf;,l.e,s;lad;lca;skc;lkasc;k;wk;ekr;qkw;fk;qk;aclks;lck;kwe;qlkf;lwekf;lqk;kca/kcq/;kf;/wq;er/;wemc;kasd/vjlerhgnkv,bsfnqlnfknjk,env,nq,nfwqnf.wmlmvavqljwlejl   jdlj    llk jcljljhajsjqbwd bdkcdashlcahlcb,kbd,    n,kew   kdkqwn,cknc ,k,qnwn qbd,k   bx, mbmasbcmbambmdbamcbamscmnavfkjfhkqwhecquhakcbkwb,ek,fbqwfqwbfnqefkqfqewfqwfqvaddna,dnlawjdla.jdj.lskd.wnkakadmbDmabdmadahqbdkfsfsknasnwnkdnsnsckwkcwjlkrjflqwjclamlqwdjwlfdjlamflcmljwijrlqflkmlkmlam;c;wk;rk;qkf;,l.e,s;lad;lca;skc;lkasc;k;wk;ekr;qkw;fk;qk;aclks;lck;kwe;qlkf;lwekf;lqk;kca/kcq/;kf;/wq;er/;wemc;kasd/vjlerhgnkv,bsfnqlnfknjk,env,nq,nfwqnf.wmlmvavqljwlejl   jdlj    llk jcljljhajsjqbwd bdkcdashlcahlcb,kbd,    n,kew   kdkqwn,cknc ,k,qnwn qbd,k   bx, mbmasbcmbambmdbamcbamscmnavfkjfhkqwhecquhakcbkwb,ek,fbqwfqwbfnqefkqfqewfqwfqvadvavafsfjlahuhdwnf.v.sljp;jdqdsjdfhalkshdlhliqjdna,dnlawjdla.jdj.lskd.wnkakadmbDmabdmadahqbdkfsfsknasnwnkdnsnsckwkcwjlkrjflqwjclamlqwdjwlfdjlamflcmljwijrlqflkmlkmlam;c;wk;rk;qkf;,l.e,s;lad;lca;skc;lkasc;k;wk;ekr;qkw;fk;qk;aclks;lck;kwe;qlkf;lwekf;lqk;kca/kcq/;kf;/wq;er/;wemc;kasd/vjlerhgnkv,bsfnqlnfknjk,env,nq,nfwqnf.wmlmvavqljwlejl   jdlj    llk jcljljhajsjqbwd bdkcdashlcahlcb,kbd,    n,kew   kdkqwn,cknc ,k,qnwn qbd,k   bx, mbmasbcmbambmdbamcbamscmnavfkjfhkqwhecquhakcbkwb,ek,fbqwfqwbfnqefkqfqewfqwfqvadfsfjlahuhdwnf.v.sljp;jdqdsjdfhalkshdlhliqjdna,dnlawjdla.jdj.lskd.wnkakadmbDmabdmadahqbdkfsfsknasnwnkdnsnsckwkcwjlkrjflqwjclamlqwdjwlfdjlamflcmljwijrlqflkmlkmlam;c;wk;rk;qkf;,l.e,s;lad;lca;skc;lkasc;k;wk;ekr;qkw;fk;qk;aclks;lck;kwe;qlkf;lwekf;lqk;kca/kcq/;kf;/wq;er/;wemc;kasd/vjlerhgnkv,bsfnqlnfknjk,env,nq,nfwqnf.wmlmvavqljwlejl   jdlj    llk jcljljhajsjqbwd bdkcdashlcahlcb,kbd,    n,kew   kdkqwn,cknc ,k,qnwn qbd,k   bx, mbmasbcmbambmdbamcbamscmnavfkjfhkqwhecquhakcbkwb,ek,fbqwfqwbfnqefkqfqewfqwfqvadfsfjlahuhdwnf.v.sljp;jdqdsjdfhalkshdlhliqjdna,dnlawjdla.jdj.lskd.wnkakadmbDmabdmadahqbdkfsfsknasnwnkdnsnsckwkcwjlkrjflqwjclamlqwdjwlfdjlamflcmljwijrlqflkmlkmlam;c;wk;rk;qkf;,l.e,s;lad;lca;skc;lkasc;k;wk;ekr;qkw;fk;qk;aclks;lck;kwe;qlkf;lwekf;lqk;kca/kcq/;kf;/wq;er/;wemc;kasd/vjlerhgnkv,bsfnqlnfknjk,env,nq,nfwqnf.wmlmvavqljwlejl   jdlj    llk jcljljhajsjqbwd bdkcdashlcahlcb,kbd,    n,kew   kdkqwn,cknc ,k,qnwn qbd,k   bx, mbmasbcmbambmdbamcbamscmnavfkjfhkqwhecquhakcbkwb,ek,fbqwfqwbfnqefkqfqewfqwfqvadfqfqv".as_bytes();
-        println!("{}", data.len());
-        let compress = HuffmanCodec::new();
+        let mut compress = HuffmanCodec::new();
         let compressed = compress.encode(&data);
-        println!("{}", compressed.len());
-        let b = compress.decode(&compressed);
-        println!("{}", std::str::from_utf8(&b).unwrap());
-        println!("{}", std::str::from_utf8(&b).unwrap().len());
-        println!("{}", b.len());
+        compress.decode(&compressed);
     }
 }
