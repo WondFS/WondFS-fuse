@@ -42,7 +42,6 @@ impl<T: Copy> Array1<T> {
 pub struct Iter1<'a, T> {
     array: &'a s_array::SArray<T>,
     index: u32,
-    size: u32,
 }
 
 impl<'a, T: Copy> Iter1<'a, T> {
@@ -50,7 +49,6 @@ impl<'a, T: Copy> Iter1<'a, T> {
         Iter1 {
             array,
             index: 0,
-            size: array.get_size()[0],
         }
     }
 }

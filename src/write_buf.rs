@@ -9,14 +9,14 @@ pub struct WriteBuf {
 pub struct WriteCache {
     pub capacity: usize,
     pub cache: Vec<WriteBuf>,
-    pub table: HashMap<u32, usize>,
+    pub table: HashMap<u32, bool>,
     pub sync: bool,
 }
 
 impl WriteCache {
     pub fn new() -> WriteCache {
         WriteCache {
-            capacity: 128,
+            capacity: 32,
             cache: vec![],
             sync: false,
             table: HashMap::new(),
@@ -37,10 +37,14 @@ impl WriteCache {
         };
         if !self.table.contains_key(&address) {
             self.cache.push(buf);
-            self.table.insert(address, index);
+            self.table.insert(address, true);
         } else {
-            let index = self.table.get(&address).unwrap();
-            self.cache[*index] = buf;
+            for index in 0..self.cache.len() {
+                if self.cache[index].address == address {
+                    self.cache[index] = buf;
+                    break;
+                }
+            }
         }
     }
 
@@ -48,8 +52,12 @@ impl WriteCache {
         if !self.table.contains_key(&address) {
             return None;
         }
-        let index = self.table.get(&address).unwrap();
-        Some(self.cache[*index].data)
+        for index in 0..self.cache.len() {
+            if self.cache[index].address == address {
+                return Some(self.cache[index].data);
+            }
+        }
+        panic!("WriteBuf: read internal error");
     }
 
     pub fn get_all(&self) -> Vec<(u32, [u8; 4096])> {
@@ -62,8 +70,12 @@ impl WriteCache {
 
     pub fn recall_write(&mut self, address: u32) {
         if self.table.contains_key(&address) {
-            let index = self.table.get(&address).unwrap();
-            self.cache.remove(*index);
+            for index in 0..self.cache.len() {
+                if self.cache[index].address == address {
+                    self.cache.remove(index);
+                    break;
+                }
+            }
             self.table.remove(&address);
         }
     }
@@ -90,7 +102,7 @@ mod test {
     #[test]
     fn basics() {
         let mut write_buf = WriteCache::new();
-        for i in 0..128 {
+        for i in 0..32 {
             write_buf.write(i, [0; 4096]);
         }
         assert_eq!(write_buf.need_sync(), true);

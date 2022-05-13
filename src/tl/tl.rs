@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::{UNIX_EPOCH, SystemTime, Duration};
 use crate::util::array;
 use crate::driver::disk_manager;
 use crate::tl::check_center;
@@ -46,13 +45,16 @@ impl TranslationLayer {
 }
 
 impl TranslationLayer {
-    pub fn read(&mut self, block_no: u32) -> [[u8; 4096]; 128] {
+    pub fn read(&mut self, block_no: u32) -> array::Array1<[u8; 4096]> {
         let start_index = block_no * 128;
         let end_index = (block_no + 1) * 128;
         let mut exist_indexs = vec![];
+        let mut should_check = vec![];
         for index in start_index..end_index {
+            should_check.push(true);
             if self.write_cache.contains_address(index) {
                 exist_indexs.push(index);
+                should_check[index as usize] = false;
             }
         }
         let mut block_data = transfer(self.disk_manager.disk_read(self.transfer(block_no)));
@@ -60,9 +62,8 @@ impl TranslationLayer {
             let data = self.write_cache.read(index).unwrap();
             block_data.set(index - start_index, data);
         }
-        let mut data = reverse(&block_data);
-        self.check_block(block_no, &mut data);
-        data
+        self.check_block(block_no, &mut block_data, &should_check);
+        block_data
     }
 
     pub fn write(&mut self, address: u32, data: [u8; 4096]) {
@@ -71,7 +72,7 @@ impl TranslationLayer {
             return;
         }
         let data = self.write_cache.get_all();
-        
+        self.write_sign(&data);
         for (address, data) in data.into_iter() {
             let mut block_no = address / 128;
             let offset = address % 128;
@@ -134,18 +135,24 @@ impl TranslationLayer {
         }
     }
 
-    pub fn check_block(&mut self, block_no: u32, data: &mut [[u8; 4096]; 128]) -> bool {
+    pub fn check_block(&mut self, block_no: u32, data: &mut array::Array1<[u8; 4096]>, should_check: &Vec<bool>) -> bool {
         let mut flag = true;
-        for (index, page) in data.clone().iter().enumerate() {
+        for (index, page) in data.dup().iter().enumerate() {
+            if !should_check[index] {
+                continue;
+            }
             let address = block_no * 128 + index as u32;
             let signature = self.get_address_sign(address);
-            let ret = check_center::CheckCenter::check(page, &signature);
+            if signature.is_none() {
+                continue;
+            }
+            let ret = check_center::CheckCenter::check(&page, &signature.unwrap());
             if ret.0 == false {
                 if ret.2 == None {
                     flag = false;
                     break;
                 } else {
-                    data[index] = ret.2.unwrap();
+                    data.set(index as u32, ret.2.unwrap());
                 }
             }
         }
@@ -155,25 +162,39 @@ impl TranslationLayer {
             self.used_table.insert(new_block_no, true);
             self.map_v_table.insert(block_no, new_block_no);
             self.err_block_num += 1;
+            self.sync_map_v_table();
             return false;
         }
         true
     }
 
-    pub fn write_sign(&mut self, data: Vec<(u32, [u8;4096])>) {
+    pub fn write_sign(&mut self, data: &Vec<(u32, [u8;4096])>) {
+        if data.len() != 32 {
+            panic!("TranslationLayer: write sign no available size");
+        }
         let mut page_data = [0; 4096];
+        if self.sign_block_offset / 32 == 127 {
+            if !self.used_table.contains_key(&self.sign_block_no) {
+                self.used_table.insert(self.sign_block_no, true);
+            }
+            self.sign_block_no = self.find_next_block();
+            self.sign_block_offset = 0;
+        }
+        let address = self.sign_block_no * 128 + self.sign_block_offset / 32;
         for (index, data) in data.iter().enumerate() {
             let signature = self.set_address_sign(&data.1, data.0);
             let start_index = index * 128;
             for (index, byte) in signature.iter().enumerate() {
                 page_data[start_index + index] = *byte;
             }
+            if self.sign_block_map.contains_key(&data.0) {
+                *self.sign_block_map.get_mut(&data.0).unwrap() = self.sign_block_no;
+                *self.sign_offset_map.get_mut(&data.0).unwrap() = self.sign_block_offset + index as u32;
+            } else {
+                self.sign_block_map.insert(data.0, self.sign_block_no);
+                self.sign_offset_map.insert(data.0,  self.sign_block_offset + index as u32);
+            }
         }
-        if self.sign_block_offset / 32 > 127 {
-            self.sign_block_no = self.find_next_block();
-            self.sign_block_offset = 0;
-        }
-        let address = self.sign_block_no * 128 + self.sign_block_offset / 32;
         self.sign_block_offset += 32;
         self.disk_manager.disk_write(address, page_data);
     }
@@ -186,24 +207,26 @@ impl TranslationLayer {
         }
     }
 
-    pub fn get_address_sign(&self, address: u32) -> Vec<u8> {
-        let address = self.sign_block_map.get(&address);
-        if address.is_none() {
-            panic!("TranslationLayer: get sign no available adderss");
+    pub fn get_address_sign(&self, address: u32) -> Option<Vec<u8>> {
+        let sign_address = self.sign_block_map.get(&address);
+        if sign_address.is_none() {
+            return None;
         }
-        let address = address.unwrap();
+        let sign_address = sign_address.unwrap();
         let offset = self.sign_offset_map.get(&address);
         if offset.is_none() {
-            panic!("TranslationLayer: get sign no available address");
+            panic!("TranslationLayer: get sign internal error");
         }
         let offset = offset.unwrap();
-        let data = self.disk_manager.disk_read(address / 128)[(address % 128) as usize];
-        data[(offset*128) as usize..(offset*128+128) as usize].to_vec()
+        let data = self.disk_manager.disk_read(*sign_address)[(offset / 32) as usize];
+        let ret = data[(offset % 32 *128) as usize..(offset % 32 *128+128) as usize].to_vec();
+        Some(ret)
     }
 
     pub fn set_address_sign(&self, data: &[u8; 4096], address: u32) -> Vec<u8> {
         let sign_type = self.choose_sign_type();
-        check_center::CheckCenter::sign(data, address, sign_type)
+        let sign = check_center::CheckCenter::sign(data, address, sign_type);
+        sign
     }
 
     pub fn choose_sign_type(&self) -> check_center::CheckType {
@@ -221,6 +244,39 @@ impl TranslationLayer {
             return block_no;
         }
         panic!("TranslationLayer: No available block to map")
+    }
+
+
+    pub fn sync_map_v_table(&mut self) {
+        self.disk_manager.disk_erase(self.table_block_no);
+        let mut data = array::Array1::<u8>::new(128 * 4096);
+        let mut index = 0;
+        for (key, value) in &self.map_v_table {
+            let start_index = 8 + index * 8;
+            let byte_1 = (*key >> 24) as u8;
+            let byte_2 = (*key >> 16) as u8;
+            let byte_3 = (*key >> 8) as u8;
+            let byte_4 = *key as u8;
+            data.set(start_index, byte_1);
+            data.set(start_index + 1, byte_2);
+            data.set(start_index + 2, byte_3);
+            data.set(start_index + 3, byte_4);
+            let byte_1 = (*value >> 24) as u8;
+            let byte_2 = (*value >> 16) as u8;
+            let byte_3 = (*value >> 8) as u8;
+            let byte_4 = *value as u8;
+            data.set(start_index + 4, byte_1);
+            data.set(start_index + 5, byte_2);
+            data.set(start_index + 6, byte_3);
+            data.set(start_index + 7, byte_4);
+            index += 1;
+        }
+        self.write_table_block(data);
+    }
+
+    pub fn write_table_block(&self, data: array::Array1::<u8>) {
+        // let data = reverse(&data);
+        // 
     }
 }
 
@@ -323,12 +379,14 @@ mod test {
         tl.init();
 
         let data = [1; 4096];
-        tl.write(100, data);
+        for i in 0..300 {
+            tl.write(i, data);
+        }
         let data = tl.read(0);
-        // assert_eq!(data[100], [1; 4096]);
+        assert_eq!(data.get(100), [1; 4096]);
 
-        // tl.erase(0);
-        // let data = tl.read(0); 
-        // assert_eq!(data[100], [0; 4096]);
+        tl.erase(0);
+        let data = tl.read(0); 
+        assert_eq!(data.get(100), [0; 4096]);
     }
 }
