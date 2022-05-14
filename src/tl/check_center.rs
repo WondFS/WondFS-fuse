@@ -64,6 +64,10 @@ impl CheckCenter {
         sa[1] = byte_2;
         sa[2] = byte_3;
         sa[3] = byte_4;
+        sa[119] = 0x33;
+        sa[120] = 0x33;
+        sa[121] = 0xaa;
+        sa[122] = 0xaa;
         let byte_1 = (address >> 24) as u8;
         let byte_2 = (address >> 16) as u8;
         let byte_3 = (address >> 8) as u8;

@@ -5,9 +5,6 @@ use crate::tl::check_center;
 use crate::tl::tl_helper::*;
 use crate::write_buf;
 
-const MAGIC_NUMBER_1: u32 = 0x2222ffff; // 标志坏块映射块
-const MAGIC_NUMBER_2: u32 = 0x3333aaaa; // 标志校验存储块
-
 pub struct TranslationLayer {
     pub disk_manager: disk_manager::DiskManager,
     pub write_cache: write_buf::WriteCache,
@@ -26,7 +23,7 @@ pub struct TranslationLayer {
 
 impl TranslationLayer {
     pub fn new() -> TranslationLayer {
-        TranslationLayer {
+        let mut tl = TranslationLayer {
             disk_manager: disk_manager::DiskManager::new(true),
             write_cache: write_buf::WriteCache::new(),
             map_v_table: HashMap::new(),
@@ -40,7 +37,9 @@ impl TranslationLayer {
             table_block_no: 28,
             sign_block_no: 29,
             sign_block_offset: 0,
-        }
+        };
+        tl.init();
+        tl
     }
 }
 
@@ -96,6 +95,7 @@ impl TranslationLayer {
 
 impl TranslationLayer {
     pub fn init(&mut self) {
+        trace!("TranslationLayer: init with block range block_no: {} - block_no: {}", self.use_max_block_no + 1, self.max_block_no);
         for block_no in self.use_max_block_no + 1..=self.max_block_no {
             self.init_with_block(block_no, transfer(self.disk_manager.disk_read(block_no)));
         }
@@ -105,7 +105,8 @@ impl TranslationLayer {
         let block_type = judge_block_type(&data);
         match block_type {
             BlockType::MappingTable => {
-                let iter = MapDataRegion::new(&truncate_array_1_to_array_2(data));
+                trace!("TranslationLayer: init with mapping table block block_no: {}", block_no);
+                let iter = MapDataRegion::new(&data);
                 for entry in iter {
                     self.map_v_table.insert(entry.0, entry.1);
                     self.used_table.insert(entry.1, true);
@@ -114,7 +115,8 @@ impl TranslationLayer {
                 self.table_block_no = block_no;
             },
             BlockType::Signature => {
-                let iter = SignDataRegion::new(&truncate_array_1_to_array_2(data));
+                trace!("TranslationLayer: init with signature block block_no: {}", block_no);
+                let iter = SignDataRegion::new(&data);
                 let mut len = 0;
                 for (index, entry) in iter.enumerate() {
                     let address = check_center::CheckCenter::extract_address(&entry.to_vec());
@@ -241,6 +243,7 @@ impl TranslationLayer {
             if self.used_table.contains_key(&block_no) {
                 continue;
             }
+            trace!("TranslationLayer: find next block to use block_no: {}", block_no);
             return block_no;
         }
         panic!("TranslationLayer: No available block to map")
@@ -248,7 +251,6 @@ impl TranslationLayer {
 
 
     pub fn sync_map_v_table(&mut self) {
-        self.disk_manager.disk_erase(self.table_block_no);
         let mut data = array::Array1::<u8>::new(128 * 4096);
         let mut index = 0;
         for (key, value) in &self.map_v_table {
@@ -271,50 +273,55 @@ impl TranslationLayer {
             data.set(start_index + 7, byte_4);
             index += 1;
         }
-        self.write_table_block(data);
+        self.write_table_block(&data);
     }
 
-    pub fn write_table_block(&self, data: array::Array1::<u8>) {
-        // let data = reverse(&data);
-        // 
+    pub fn write_table_block(&mut self, data: &array::Array1::<u8>) {
+        self.disk_manager.disk_erase(self.table_block_no);
+        let mut index = 0;
+        while index < 128 {
+            let start_index = 4096 * index;
+            let end_index = (index + 1) * 4096;
+            let mut page = [0; 4096];
+            for index in start_index..end_index {
+                page[index - start_index] = data.get(index as u32);
+            }
+            self.disk_manager.disk_write(self.table_block_no * 128 + index as u32, page);
+            index += 1;
+        }
     }
 }
 
-pub struct MapDataRegion {
+pub struct MapDataRegion<'a> {
     count: u32,
-    data: array::Array1<u8>,
-    
+    data: &'a array::Array1<[u8; 4096]>,
 }
 
-impl MapDataRegion {
-    pub fn new(data: &array::Array2<u8>) -> MapDataRegion {
-        if data.size() != [128, 4096] {
+impl MapDataRegion<'_> {
+    pub fn new(data: &array::Array1<[u8; 4096]>) -> MapDataRegion {
+        if data.len() != 128 {
             panic!("MapDataRegion: new not matched size");
         }
-        let mut arr = array::Array1::<u8>::new(data.len());
-        for (index, byte) in data.iter().skip(8).enumerate() {
-            arr.set(index as u32, byte);
-        }
         MapDataRegion {
-            count: 0,
-            data: arr,
+            count: 8,
+            data,
         }
     }
 }
 
-impl Iterator for MapDataRegion {
+impl Iterator for MapDataRegion<'_> {
     type Item = (u32, u32);
     fn next(&mut self) -> Option<Self::Item> {
-        if self.count < self.data.len() {
-            let byte_1 = (self.data.get(self.count) as u32) << 24;
-            let byte_2 = (self.data.get(self.count+1) as u32) << 16;
-            let byte_3 = (self.data.get(self.count+2) as u32) << 8;
-            let byte_4 = self.data.get(self.count+3) as u32;
+        if self.count < 128 * 4096 {
+            let byte_1 = (self.data.get(self.count / 4096)[(self.count % 4096) as usize] as u32) << 24;
+            let byte_2 = (self.data.get((self.count + 1) / 4096)[((self.count + 1) % 4096) as usize] as u32) << 16;
+            let byte_3 = (self.data.get((self.count + 2) / 4096)[((self.count + 2) % 4096) as usize] as u32) << 8;
+            let byte_4 = self.data.get((self.count + 3) / 4096)[((self.count + 3) % 4096) as usize] as u32;
             let lba = byte_1 + byte_2 + byte_3 + byte_4;
-            let byte_1 = (self.data.get(self.count) as u32) << 24;
-            let byte_2 = (self.data.get(self.count+1) as u32) << 16;
-            let byte_3 = (self.data.get(self.count+2) as u32) << 8;
-            let byte_4 = self.data.get(self.count+3) as u32;
+            let byte_1 = (self.data.get((self.count + 4) / 4096)[((self.count + 4) % 4096) as usize] as u32) << 24;
+            let byte_2 = (self.data.get((self.count + 5) / 4096)[((self.count + 5) % 4096) as usize] as u32) << 16;
+            let byte_3 = (self.data.get((self.count + 6) / 4096)[((self.count + 6) % 4096) as usize] as u32) << 8;
+            let byte_4 = self.data.get((self.count + 7) / 4096)[((self.count + 7) % 4096) as usize] as u32;
             let pba = byte_1 + byte_2 + byte_3 + byte_4;
             self.count += 8;
             if lba == 0 && pba == 0 {
@@ -328,34 +335,30 @@ impl Iterator for MapDataRegion {
     }
 }
 
-pub struct SignDataRegion {
+pub struct SignDataRegion<'a> {
     count: u32,
-    data: array::Array1<u8>,
+    data: &'a array::Array1<[u8; 4096]>,
 }
 
-impl SignDataRegion {
-    pub fn new(data: &array::Array2<u8>) -> SignDataRegion {
-        if data.size() != [128, 4096] {
+impl SignDataRegion<'_> {
+    pub fn new(data: &array::Array1<[u8; 4096]>) -> SignDataRegion {
+        if data.len() != 128 {
             panic!("SignDataRegion: new not matched size");
-        }
-        let mut arr = array::Array1::<u8>::new(data.len());
-        for (index, byte) in data.iter().skip(8).enumerate() {
-            arr.set(index as u32, byte);
         }
         SignDataRegion {
             count: 0,
-            data: arr,
+            data,
         }
     }
 }
 
-impl Iterator for SignDataRegion {
+impl Iterator for SignDataRegion<'_> {
     type Item = [u8; 128];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.count < self.data.len() {
+        if self.count < 128 * 4096 {
             let mut data = [0; 128];
             for i in self.count..self.count+128 {
-                data[(i - self.count) as usize] = self.data.get(i);
+                data[(i - self.count) as usize] = self.data.get(i / 4096)[(i % 4096) as usize];
             }
             self.count += 128;
             if data == [0; 128] {
@@ -376,7 +379,6 @@ mod test {
     #[test]
     fn basics() {
         let mut tl = TranslationLayer::new();
-        tl.init();
 
         let data = [1; 4096];
         for i in 0..300 {

@@ -1,5 +1,4 @@
 use crate::driver::{disk, fake_disk};
-use crate::tl::tl;
 
 pub struct DiskManager {
     pub is_virtual: bool,
@@ -12,7 +11,9 @@ impl DiskManager {
         let mut driver = None;
         let mut fake_disk = None;
         if is_virtual {
-            fake_disk = Some(fake_disk::FakeDisk::new(4096)); // 32 Block 1024 Page
+            let block_num = 32;
+            trace!("DiskManager: init fake disk with block num: {}", block_num);
+            fake_disk = Some(fake_disk::FakeDisk::new(block_num * 128));
         } else {
             driver = Some(disk::DiskDriver::new());
         }
@@ -24,6 +25,7 @@ impl DiskManager {
     }
 
     pub fn disk_read(&self, block_no: u32) -> [[u8; 4096]; 128] {
+        trace!("DiskManager: read block block_no: {}", block_no);
         if self.is_virtual {
             return self.fake_disk.as_ref().unwrap().fake_disk_read(block_no);
         }
@@ -31,6 +33,7 @@ impl DiskManager {
     }
     
     pub fn disk_write(&mut self, address: u32, data: [u8; 4096]) {
+        trace!("DiskManager: write page adderss: {} ", address);
         if self.is_virtual {
             return self.fake_disk.as_mut().unwrap().fake_disk_write(address, data);
         }
@@ -38,6 +41,7 @@ impl DiskManager {
     }
     
     pub fn disk_erase(&mut self, block_no: u32) {
+        trace!("DiskManager: erase block block_no: {}", block_no);
         if self.is_virtual {
             return self.fake_disk.as_mut().unwrap().fake_disk_erase(block_no);
         }

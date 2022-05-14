@@ -24,8 +24,16 @@ impl<T: Copy> Array1<T> {
         self.array.get(vec![index])
     }
 
+    pub fn get_by_index(&self,index: u32) -> T {
+        self.get(index)
+    }
+
     pub fn set(&mut self, index: u32, value: T) {
         self.array.set(vec![index], value);
+    }
+
+    pub fn set_by_index(&mut self, index: u32, value: T) {
+        self.set(index, value);
     }
 
     pub fn iter(&self) -> Iter1<'_, T> {
@@ -94,8 +102,20 @@ impl<T: Copy> Array2<T> {
         self.array.get(vec![row, column])
     }
 
+    pub fn get_index(&self, index: u32) -> T {
+        let row = index / self.size()[1];
+        let column = index % self.size()[1];
+        self.get(row, column)
+    }
+
     pub fn set(&mut self, row: u32, column: u32, value: T) {
         self.array.set(vec![row, column], value);
+    }
+
+    pub fn set_index(&mut self, index: u32, value: T) {
+        let row = index / self.size()[1];
+        let column = index % self.size()[1];
+        self.set(row, column, value);
     }
 
     pub fn iter(&self) -> Iter2<'_, T> {
@@ -187,6 +207,9 @@ mod test {
         for (i, temp) in arr_2.iter().enumerate() {
             assert_eq!(temp, data[i]);
         }
+        arr_2.set_index(9, 23);
+        assert_eq!(arr_2.get_index(9), 23);
+        assert_eq!(arr_2.get(2, 1), 23);
 
         let dup = arr_2.dup();
         assert_eq!(dup, arr_2);

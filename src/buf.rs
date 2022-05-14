@@ -1,5 +1,5 @@
 use crate::util::lru_cache;
-use crate::driver::disk_manager;
+use crate::tl::tl;
 
 #[derive(Clone, Copy)]
 pub struct Buf {
@@ -19,7 +19,7 @@ impl Buf {
 pub struct BufCache {
     pub capacity: usize,
     pub cache: lru_cache::LRUCache<Buf>,
-    pub disk_manager: disk_manager::DiskManager,
+    pub translation_layer: tl::TranslationLayer,
 }
 
 impl BufCache {
@@ -28,7 +28,7 @@ impl BufCache {
         BufCache {
             capacity: capacity as usize,
             cache: lru_cache::LRUCache::new(capacity as usize),
-            disk_manager: disk_manager::DiskManager::new(true),
+            translation_layer: tl::TranslationLayer::new(),
         }
     }
 
@@ -38,16 +38,16 @@ impl BufCache {
             return data.unwrap();
         }
         let block_no = address / 128;
-        let data = self.disk_manager.disk_read(block_no);
+        let data = self.translation_layer.read(block_no);
         for (index, page) in data.iter().enumerate() {
-            self.put_data(address + index as u32, *page);
+            self.put_data(address + index as u32, page);
         }
         self.get_data(address).unwrap()
     }
 
     pub fn write(&mut self, dev: u8, address: u32, data: [u8; 4096]) {
         self.put_data(address, data);
-        self.disk_manager.disk_write(address, data);
+        self.translation_layer.write(address, data);
     }
 
     pub fn erase(&mut self, dev: u8, block_no: u32) {
@@ -56,7 +56,7 @@ impl BufCache {
         for address in start_address..end_address {
             self.remove_data(address);
         }
-        self.disk_manager.disk_erase(block_no);
+        self.translation_layer.erase(block_no);
     }
 }
 

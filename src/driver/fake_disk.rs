@@ -15,12 +15,7 @@ impl FakeDisk {
         for _ in 0..size {
             data.push([0; 4096]);
         }
-        let block_num;
-        if size % 128 == 0 {
-            block_num = size / 128;
-        } else {
-            block_num = size / 128 + 1;
-        }
+        let block_num = size / 128;
         FakeDisk {
             size,
             data,
@@ -43,7 +38,7 @@ impl FakeDisk {
     
     pub fn fake_disk_write(&mut self, address: u32, data: [u8; 4096]) {
         if address > self.size - 1 {
-            panic!("FakeDisk: write at not available address");
+            panic!("FakeDisk: write at too big address");
         }
         let o_data = self.data[address as usize];
         if o_data != [0; 4096] {
