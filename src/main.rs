@@ -12,11 +12,8 @@ mod util;
 mod inode;
 mod common;
 mod compress;
-mod sys_file;
-mod fake_proc;
 mod write_buf;
 mod super_stat;
-mod flash_manager;
 
 #[macro_use]
 extern crate log;
