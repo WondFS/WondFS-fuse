@@ -45,6 +45,9 @@ impl TranslationLayer {
 
 impl TranslationLayer {
     pub fn read(&mut self, block_no: u32) -> array::Array1<[u8; 4096]> {
+        if block_no > self.use_max_block_no {
+            panic!("TranslationLayer: read can't read reserved region directly even more");
+        }
         let start_index = block_no * 128;
         let end_index = (block_no + 1) * 128;
         let mut exist_indexs = vec![];
@@ -56,7 +59,9 @@ impl TranslationLayer {
                 should_check[index as usize] = false;
             }
         }
-        let mut block_data = transfer(self.disk_manager.disk_read(self.transfer(block_no)));
+        let map_block_no = self.transfer(block_no);
+        trace!("TranslationLayer: read block block_no: {}, map to block_no: {} ", block_no, map_block_no);
+        let mut block_data = transfer(self.disk_manager.disk_read(map_block_no));
         for index in exist_indexs.into_iter() {
             let data = self.write_cache.read(index).unwrap();
             block_data.set(index - start_index, data);
@@ -70,15 +75,18 @@ impl TranslationLayer {
         if !self.write_cache.need_sync() {
             return;
         }
+        trace!("TranslationLayer: write cache full, need clear");
         let data = self.write_cache.get_all();
         self.write_sign(&data);
         for (address, data) in data.into_iter() {
-            let mut block_no = address / 128;
+            let  block_no = address / 128;
             let offset = address % 128;
-            block_no = self.transfer(block_no);
-            let address = block_no * 128 + offset;
-            self.disk_manager.disk_write(address, data);   
+            let map_block_no = self.transfer(block_no);
+            let map_address = map_block_no * 128 + offset;
+            trace!("TranslationLayer: write page address: {}, map to adderss: {}", address, map_address);
+            self.disk_manager.disk_write(map_address, data);   
         }
+        trace!("TranslationLayer: write cache had clear");
         self.write_cache.sync();
     }
 
@@ -87,9 +95,14 @@ impl TranslationLayer {
         let end_index = (block_no + 1) * 128;
         for index in start_index..end_index {
             self.write_cache.recall_write(index);
+            if self.sign_block_map.contains_key(&index) {
+                self.sign_block_map.remove(&index);
+                self.sign_offset_map.remove(&index);
+            }
         }
-        let block_no = self.transfer(block_no);
-        self.disk_manager.disk_erase(block_no);
+        let map_block_no = self.transfer(block_no);
+        trace!("TranslationLayer: erase block block_no: {}, map to block_no: {}", block_no, map_block_no);
+        self.disk_manager.disk_erase(map_block_no);
     }
 }
 
@@ -148,9 +161,10 @@ impl TranslationLayer {
             if signature.is_none() {
                 continue;
             }
-            let ret = check_center::CheckCenter::check(&page, &signature.unwrap());
+            let ret = check_center::CheckCenter::check(&page, &signature.as_ref().unwrap());
             if ret.0 == false {
                 if ret.2 == None {
+                    println!("{:?} {}", signature.unwrap(), index);
                     flag = false;
                     break;
                 } else {
@@ -159,7 +173,7 @@ impl TranslationLayer {
             }
         }
         if !flag {
-            warn!("TranslationLayer: {} block has broken", block_no);
+            warn!("TranslationLayer: block block_no: {}, has broken", block_no);
             let new_block_no = self.find_next_block();
             self.used_table.insert(new_block_no, true);
             self.map_v_table.insert(block_no, new_block_no);
@@ -252,6 +266,7 @@ impl TranslationLayer {
 
     pub fn sync_map_v_table(&mut self) {
         let mut data = array::Array1::<u8>::new(128 * 4096);
+        data.init(0);
         let mut index = 0;
         for (key, value) in &self.map_v_table {
             let start_index = 8 + index * 8;

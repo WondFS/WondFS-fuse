@@ -60,7 +60,7 @@ impl<T: Copy> SArray<T> {
         }
         let off = self.get_off(&pos);
         if self.memory[off as usize].is_none() {
-            panic!("SArray: get pos not exists {}", off);
+            panic!("SArray: get pos not exists");
         }
         self.memory[off as usize].unwrap()
     }
