@@ -1,5 +1,6 @@
 use crate::util::lru_cache;
 use crate::tl::tl;
+use crate::util::array;
 
 #[derive(Clone, Copy)]
 pub struct Buf {
@@ -48,6 +49,18 @@ impl BufCache {
     pub fn write(&mut self, dev: u8, address: u32, data: [u8; 4096]) {
         self.put_data(address, data);
         self.translation_layer.write(address, data);
+    }
+
+    pub fn write_block_driect(&mut self, dev: u8, block_no: u32, data: array::Array1::<[u8; 4096]>) {
+        if data.len() != 128 {
+            panic!("BufCache: write block directly no available data size");
+        }
+        let start_address = block_no * 128;
+        for i in 0..data.len() {
+            let address = start_address + i;
+            self.put_data(address, data.get(i));
+        }
+        self.translation_layer.write_block_direct(block_no, data);
     }
 
     pub fn erase(&mut self, dev: u8, block_no: u32) {

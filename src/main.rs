@@ -4,7 +4,6 @@ mod tl;
 mod gc;
 mod kv;
 mod buf;
-mod raw;
 mod fuse;
 mod core;
 mod driver;
@@ -13,7 +12,6 @@ mod inode;
 mod common;
 mod compress;
 mod write_buf;
-mod super_stat;
 
 #[macro_use]
 extern crate log;

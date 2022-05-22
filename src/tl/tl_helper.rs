@@ -21,7 +21,7 @@ pub fn judge_block_type(data: &array::Array1<[u8; 4096]>) -> BlockType {
     BlockType::Unknown
 }
 
-pub fn transfer(data: [[u8; 4096]; 128]) -> array::Array1<[u8; 4096]> {
+pub fn transfer(data: &[[u8; 4096]; 128]) -> array::Array1<[u8; 4096]> {
     let mut res = array::Array1::new(128);
     res.init([0; 4096]);
     for i in 0..128 {

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 use crate::util::array;
 use crate::driver::disk_manager;
 use crate::tl::check_center;
@@ -19,6 +20,8 @@ pub struct TranslationLayer {
     pub table_block_no: u32,
     pub sign_block_no: u32,
     pub sign_block_offset: u32,
+    pub write_speed: u32,
+    pub read_speed: u32,
 }
 
 impl TranslationLayer {
@@ -37,9 +40,15 @@ impl TranslationLayer {
             table_block_no: 28,
             sign_block_no: 29,
             sign_block_offset: 0,
+            write_speed: 0,
+            read_speed: 0,
         };
         tl.init();
         tl
+    }
+    
+    pub fn get_disk_speed(&self) -> (u32, u32) {
+        (self.read_speed, self.write_speed)
     }
 }
 
@@ -61,7 +70,11 @@ impl TranslationLayer {
         }
         let map_block_no = self.transfer(block_no);
         trace!("TranslationLayer: read block block_no: {}, map to block_no: {} ", block_no, map_block_no);
-        let mut block_data = transfer(self.disk_manager.disk_read(map_block_no));
+        let start_time = SystemTime::now();
+        let mut block_data = transfer(&self.disk_manager.disk_read(map_block_no));
+        let end_time = SystemTime::now();
+        let duration = end_time.duration_since(start_time).ok().unwrap().as_millis();
+        self.update_read_speed(512, duration);
         for index in exist_indexs.into_iter() {
             let data = self.write_cache.read(index).unwrap();
             block_data.set(index - start_index, data);
@@ -78,6 +91,7 @@ impl TranslationLayer {
         trace!("TranslationLayer: write cache full, need clear");
         let data = self.write_cache.get_all();
         self.write_sign(&data);
+        let start_time = SystemTime::now();
         for (address, data) in data.into_iter() {
             let  block_no = address / 128;
             let offset = address % 128;
@@ -86,8 +100,35 @@ impl TranslationLayer {
             trace!("TranslationLayer: write page address: {}, map to adderss: {}", address, map_address);
             self.disk_manager.disk_write(map_address, data);   
         }
+        let end_time = SystemTime::now();
+        let duration = end_time.duration_since(start_time).ok().unwrap().as_millis();
+        self.update_write_speed(32 * 4, duration);
         trace!("TranslationLayer: write cache had clear");
         self.write_cache.sync();
+    }
+
+    pub fn write_block_direct(&mut self, block_no: u32, data: array::Array1::<[u8; 4096]>) {
+        let map_block_no = self.transfer(block_no);
+        trace!("TranslationLayer: write block block_no: {}, map to block_no: {}, directly", block_no, map_block_no);
+        let start_time = SystemTime::now();
+        for i in 0..4 {
+            let mut group_data = vec![];
+            for j in 0..32 {
+                let index = i * 32 + j;
+                group_data.push((block_no * 128 + index, data.get(index)));
+            }
+            self.write_sign(&group_data);
+            for j in 0..32 {
+                let index = i * 32 + j;
+                let address = block_no * 128 + index;
+                let map_address = map_block_no * 128 + address % 128;
+                trace!("TranslationLayer: write page address: {}, map to adderss: {}", address, map_address);
+                self.disk_manager.disk_write(map_address, data.get(index));   
+            }
+        }
+        let end_time = SystemTime::now();
+        let duration = end_time.duration_since(start_time).ok().unwrap().as_millis();
+        self.update_write_speed( 512, duration);
     }
 
     pub fn erase(&mut self, block_no: u32) {
@@ -110,7 +151,7 @@ impl TranslationLayer {
     pub fn init(&mut self) {
         trace!("TranslationLayer: init with block range block_no: {} - block_no: {}", self.use_max_block_no + 1, self.max_block_no);
         for block_no in self.use_max_block_no + 1..=self.max_block_no {
-            self.init_with_block(block_no, transfer(self.disk_manager.disk_read(block_no)));
+            self.init_with_block(block_no, transfer(&self.disk_manager.disk_read(block_no)));
         }
     }
 
@@ -267,6 +308,10 @@ impl TranslationLayer {
     pub fn sync_map_v_table(&mut self) {
         let mut data = array::Array1::<u8>::new(128 * 4096);
         data.init(0);
+        data.set(0, 0x22);
+        data.set(1, 0x22);
+        data.set(2, 0xff);
+        data.set(3, 0xff);
         let mut index = 0;
         for (key, value) in &self.map_v_table {
             let start_index = 8 + index * 8;
@@ -305,15 +350,31 @@ impl TranslationLayer {
             index += 1;
         }
     }
+
+    // size 以KB为单位 duration以ms为单位 speed以MB/s为单位
+    pub fn update_read_speed(&mut self, size: u32, duration: u128) {
+        // let len = size * 1000 / 1024;
+        // let duration = duration as u32;
+        // let speed = len / duration;
+        // self.read_speed = 6 * speed / 10 + 4 * self.read_speed / 10;
+    }
+
+    // size 以KB为单位 duration以ms为单位 speed以MB/s为单位
+    pub fn update_write_speed(&mut self, size: u32, duration: u128) {
+        // let len = size * 1000 / 1024;
+        // let duration = duration as u32;
+        // let speed = len / duration;
+        // self.write_speed = 6 * speed / 10 + 4 * self.write_speed / 10;
+    }
 }
 
 pub struct MapDataRegion<'a> {
     count: u32,
-    data: &'a array::Array1<[u8; 4096]>,
+    data: &'a array::Array1::<[u8; 4096]>,
 }
 
 impl MapDataRegion<'_> {
-    pub fn new(data: &array::Array1<[u8; 4096]>) -> MapDataRegion {
+    pub fn new(data: &array::Array1::<[u8; 4096]>) -> MapDataRegion {
         if data.len() != 128 {
             panic!("MapDataRegion: new not matched size");
         }
@@ -352,11 +413,11 @@ impl Iterator for MapDataRegion<'_> {
 
 pub struct SignDataRegion<'a> {
     count: u32,
-    data: &'a array::Array1<[u8; 4096]>,
+    data: &'a array::Array1::<[u8; 4096]>,
 }
 
 impl SignDataRegion<'_> {
-    pub fn new(data: &array::Array1<[u8; 4096]>) -> SignDataRegion {
+    pub fn new(data: &array::Array1::<[u8; 4096]>) -> SignDataRegion {
         if data.len() != 128 {
             panic!("SignDataRegion: new not matched size");
         }
