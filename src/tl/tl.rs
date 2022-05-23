@@ -1,32 +1,39 @@
+//
+// Translation Layer
+// 
+
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 use crate::util::array;
-use crate::driver::disk_manager;
+use crate::write_buf;
 use crate::tl::check_center;
 use crate::tl::tl_helper::*;
-use crate::write_buf;
+use crate::driver::disk_manager;
 
+// Translation Layer Main Controller Structure
 pub struct TranslationLayer {
-    pub disk_manager: disk_manager::DiskManager,
-    pub write_cache: write_buf::WriteCache,
-    pub used_table: HashMap<u32, bool>,
-    pub map_v_table: HashMap<u32, u32>,
-    pub sign_block_map: HashMap<u32, u32>,
-    pub sign_offset_map: HashMap<u32, u32>,
-    pub block_num: u32,
-    pub err_block_num: u32,
-    pub use_max_block_no: u32,
-    pub max_block_no: u32,
-    pub table_block_no: u32,
-    pub sign_block_no: u32,
-    pub sign_block_offset: u32,
-    pub write_speed: u32,
-    pub read_speed: u32,
+    disk_manager: disk_manager::DiskManager,
+    write_cache: write_buf::WriteCache,
+    used_table: HashMap<u32, bool>,
+    map_v_table: HashMap<u32, u32>,
+    sign_block_map: HashMap<u32, u32>,
+    sign_offset_map: HashMap<u32, u32>,
+    use_max_block_no: u32,
+    max_block_no: u32,
+    table_block_no: u32,
+    sign_block_no: u32,
+    sign_block_offset: u32,
+    write_speed: u32,
+    read_speed: u32,
+    block_num: u32,
+    err_block_num: u32,
+    last_err_time: SystemTime,
 }
 
+// Translation Layer Simple Interface Function
 impl TranslationLayer {
     pub fn new() -> TranslationLayer {
-        let mut tl = TranslationLayer {
+        TranslationLayer {
             disk_manager: disk_manager::DiskManager::new(true),
             write_cache: write_buf::WriteCache::new(),
             map_v_table: HashMap::new(),
@@ -42,9 +49,15 @@ impl TranslationLayer {
             sign_block_offset: 0,
             write_speed: 0,
             read_speed: 0,
-        };
-        tl.init();
-        tl
+            last_err_time: SystemTime::UNIX_EPOCH,
+        }
+    }
+
+    pub fn init(&mut self) {
+        trace!("TranslationLayer: init with block range block_no: {} - block_no: {}", self.use_max_block_no + 1, self.max_block_no);
+        for block_no in self.use_max_block_no + 1..=self.max_block_no {
+            self.init_with_block(block_no, transfer(&self.disk_manager.disk_read(block_no)));
+        }
     }
     
     pub fn get_disk_speed(&self) -> (u32, u32) {
@@ -52,7 +65,13 @@ impl TranslationLayer {
     }
 }
 
+// Translation Layer Main Interface Function
 impl TranslationLayer {
+    /// Read block
+    /// params:
+    /// block_no - read block's block number
+    /// return:
+    /// block data
     pub fn read(&mut self, block_no: u32) -> array::Array1<[u8; 4096]> {
         if block_no > self.use_max_block_no {
             panic!("TranslationLayer: read can't read reserved region directly even more");
@@ -73,7 +92,7 @@ impl TranslationLayer {
         let start_time = SystemTime::now();
         let mut block_data = transfer(&self.disk_manager.disk_read(map_block_no));
         let end_time = SystemTime::now();
-        let duration = end_time.duration_since(start_time).ok().unwrap().as_millis();
+        let duration = end_time.duration_since(start_time).ok().unwrap().as_micros();
         self.update_read_speed(512, duration);
         for index in exist_indexs.into_iter() {
             let data = self.write_cache.read(index).unwrap();
@@ -83,6 +102,12 @@ impl TranslationLayer {
         block_data
     }
 
+    /// Write page
+    /// params:
+    /// address - write page's address
+    /// data - write data
+    /// return:
+    /// ()
     pub fn write(&mut self, address: u32, data: [u8; 4096]) {
         self.write_cache.write(address, data);
         if !self.write_cache.need_sync() {
@@ -98,15 +123,21 @@ impl TranslationLayer {
             let map_block_no = self.transfer(block_no);
             let map_address = map_block_no * 128 + offset;
             trace!("TranslationLayer: write page address: {}, map to adderss: {}", address, map_address);
-            self.disk_manager.disk_write(map_address, data);   
+            self.disk_manager.disk_write(map_address, data); 
         }
         let end_time = SystemTime::now();
-        let duration = end_time.duration_since(start_time).ok().unwrap().as_millis();
+        let duration = end_time.duration_since(start_time).ok().unwrap().as_micros();
         self.update_write_speed(32 * 4, duration);
         trace!("TranslationLayer: write cache had clear");
         self.write_cache.sync();
     }
 
+    /// Write block directly, bypasses write cache
+    /// params:
+    /// block_no - write block's block number
+    /// data - write data
+    /// return:
+    /// ()
     pub fn write_block_direct(&mut self, block_no: u32, data: array::Array1::<[u8; 4096]>) {
         let map_block_no = self.transfer(block_no);
         trace!("TranslationLayer: write block block_no: {}, map to block_no: {}, directly", block_no, map_block_no);
@@ -127,10 +158,15 @@ impl TranslationLayer {
             }
         }
         let end_time = SystemTime::now();
-        let duration = end_time.duration_since(start_time).ok().unwrap().as_millis();
+        let duration = end_time.duration_since(start_time).ok().unwrap().as_micros();
         self.update_write_speed( 512, duration);
     }
 
+    /// Erase block
+    /// params:
+    /// block_no - erase block's block number
+    /// return:
+    /// ()
     pub fn erase(&mut self, block_no: u32) {
         let start_index = block_no * 128;
         let end_index = (block_no + 1) * 128;
@@ -147,15 +183,9 @@ impl TranslationLayer {
     }
 }
 
+// TranslationLayer Internal Function
 impl TranslationLayer {
-    pub fn init(&mut self) {
-        trace!("TranslationLayer: init with block range block_no: {} - block_no: {}", self.use_max_block_no + 1, self.max_block_no);
-        for block_no in self.use_max_block_no + 1..=self.max_block_no {
-            self.init_with_block(block_no, transfer(&self.disk_manager.disk_read(block_no)));
-        }
-    }
-
-    pub fn init_with_block(&mut self, block_no: u32, data: array::Array1<[u8; 4096]>) {
+    fn init_with_block(&mut self, block_no: u32, data: array::Array1<[u8; 4096]>) {
         let block_type = judge_block_type(&data);
         match block_type {
             BlockType::MappingTable => {
@@ -191,7 +221,7 @@ impl TranslationLayer {
         }
     }
 
-    pub fn check_block(&mut self, block_no: u32, data: &mut array::Array1<[u8; 4096]>, should_check: &Vec<bool>) -> bool {
+    fn check_block(&mut self, block_no: u32, data: &mut array::Array1<[u8; 4096]>, should_check: &Vec<bool>) -> bool {
         let mut flag = true;
         for (index, page) in data.dup().iter().enumerate() {
             if !should_check[index] {
@@ -225,7 +255,7 @@ impl TranslationLayer {
         true
     }
 
-    pub fn write_sign(&mut self, data: &Vec<(u32, [u8;4096])>) {
+    fn write_sign(&mut self, data: &Vec<(u32, [u8;4096])>) {
         if data.len() != 32 {
             panic!("TranslationLayer: write sign no available size");
         }
@@ -256,7 +286,7 @@ impl TranslationLayer {
         self.disk_manager.disk_write(address, page_data);
     }
 
-    pub fn transfer(&self, pla: u32) -> u32 {
+    fn transfer(&self, pla: u32) -> u32 {
         if self.map_v_table.contains_key(&pla) {
             *self.map_v_table.get(&pla).unwrap()
         } else {
@@ -264,7 +294,7 @@ impl TranslationLayer {
         }
     }
 
-    pub fn get_address_sign(&self, address: u32) -> Option<Vec<u8>> {
+    fn get_address_sign(&self, address: u32) -> Option<Vec<u8>> {
         let sign_address = self.sign_block_map.get(&address);
         if sign_address.is_none() {
             return None;
@@ -280,17 +310,26 @@ impl TranslationLayer {
         Some(ret)
     }
 
-    pub fn set_address_sign(&self, data: &[u8; 4096], address: u32) -> Vec<u8> {
+    fn set_address_sign(&self, data: &[u8; 4096], address: u32) -> Vec<u8> {
         let sign_type = self.choose_sign_type();
         let sign = check_center::CheckCenter::sign(data, address, sign_type);
         sign
     }
 
-    pub fn choose_sign_type(&self) -> check_center::CheckType {
+    fn choose_sign_type(&self) -> check_center::CheckType {
+        let err_ratio = self.err_block_num as f32 / self.block_num as f32;
+        if err_ratio > 0.02 {
+            return check_center::CheckType::Ecc;
+        }
+        let time = SystemTime::now();
+        let duration = time.duration_since(self.last_err_time).ok().unwrap().as_secs();
+        if duration < 60 * 60 * 12 {
+            return check_center::CheckType::Ecc;
+        }
         check_center::CheckType::Crc32
     }
 
-    pub fn find_next_block(&self) -> u32 {
+    fn find_next_block(&self) -> u32 {
         for block_no in self.use_max_block_no+1..self.max_block_no {
             if block_no == self.table_block_no || block_no == self.sign_block_no {
                 continue;
@@ -305,7 +344,7 @@ impl TranslationLayer {
     }
 
 
-    pub fn sync_map_v_table(&mut self) {
+    fn sync_map_v_table(&mut self) {
         let mut data = array::Array1::<u8>::new(128 * 4096);
         data.init(0);
         data.set(0, 0x22);
@@ -351,30 +390,29 @@ impl TranslationLayer {
         }
     }
 
-    // size 以KB为单位 duration以ms为单位 speed以MB/s为单位
-    pub fn update_read_speed(&mut self, size: u32, duration: u128) {
-        // let len = size * 1000 / 1024;
-        // let duration = duration as u32;
-        // let speed = len / duration;
-        // self.read_speed = 6 * speed / 10 + 4 * self.read_speed / 10;
+    fn update_read_speed(&mut self, size: u32, duration: u128) {
+        let len = size * 1000000 / 1024;
+        let duration = duration as u32;
+        let speed = len / duration;
+        self.read_speed = 6 * speed / 10 + 4 * self.read_speed / 10;
     }
 
-    // size 以KB为单位 duration以ms为单位 speed以MB/s为单位
-    pub fn update_write_speed(&mut self, size: u32, duration: u128) {
-        // let len = size * 1000 / 1024;
-        // let duration = duration as u32;
-        // let speed = len / duration;
-        // self.write_speed = 6 * speed / 10 + 4 * self.write_speed / 10;
+    fn update_write_speed(&mut self, size: u32, duration: u128) {
+        let len = size * 1000000 / 1024;
+        let duration = duration as u32;
+        let speed = len / duration;
+        self.write_speed = 6 * speed / 10 + 4 * self.write_speed / 10;
     }
 }
 
-pub struct MapDataRegion<'a> {
+// MappingTable Block Encode Helper
+struct MapDataRegion<'a> {
     count: u32,
     data: &'a array::Array1::<[u8; 4096]>,
 }
 
 impl MapDataRegion<'_> {
-    pub fn new(data: &array::Array1::<[u8; 4096]>) -> MapDataRegion {
+    fn new(data: &array::Array1::<[u8; 4096]>) -> MapDataRegion {
         if data.len() != 128 {
             panic!("MapDataRegion: new not matched size");
         }
@@ -411,13 +449,14 @@ impl Iterator for MapDataRegion<'_> {
     }
 }
 
-pub struct SignDataRegion<'a> {
+// Signature Block Encode Helper
+struct SignDataRegion<'a> {
     count: u32,
     data: &'a array::Array1::<[u8; 4096]>,
 }
 
 impl SignDataRegion<'_> {
-    pub fn new(data: &array::Array1::<[u8; 4096]>) -> SignDataRegion {
+    fn new(data: &array::Array1::<[u8; 4096]>) -> SignDataRegion {
         if data.len() != 128 {
             panic!("SignDataRegion: new not matched size");
         }
@@ -448,6 +487,7 @@ impl Iterator for SignDataRegion<'_> {
     }
 }
 
+// Translation Layer Module Test
 #[cfg(test)]
 mod test {
     use super::*;
@@ -455,6 +495,7 @@ mod test {
     #[test]
     fn basics() {
         let mut tl = TranslationLayer::new();
+        tl.init();
 
         let data = [1; 4096];
         for i in 0..300 {

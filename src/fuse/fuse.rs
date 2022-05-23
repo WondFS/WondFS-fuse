@@ -43,7 +43,7 @@ impl WondFS {
 
 impl Filesystem for WondFS {
     fn init(&mut self, _req: &Request<'_>, _config: &mut KernelConfig) -> Result<(), libc::c_int> {
-        trace!("WondFS: init funcation called");
+        trace!("WondFS: init function called");
         let mut inode = self.inode_manager.i_alloc().unwrap();
         let mut stat = inode.borrow().get_stat();
         stat.file_type = inode::InodeFileType::Directory;
@@ -63,7 +63,7 @@ impl Filesystem for WondFS {
 
     // Look up a directory entry by name and get its attributes.
     fn lookup(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEntry) {
-        trace!("WondFS: lookup funcation called");
+        trace!("WondFS: lookup function called");
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
         trace!("WondFS: parent: {}, name: {}", parent, name);
@@ -107,7 +107,7 @@ impl Filesystem for WondFS {
 
     // Get file attributes.
     fn getattr(&mut self, _req: &Request<'_>, _ino: u64, reply: ReplyAttr) {
-        trace!("WondFS: getattr funcation called");
+        trace!("WondFS: getattr function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
         let inode = self.inode_manager.i_get(ino);
@@ -127,7 +127,7 @@ impl Filesystem for WondFS {
 
     // Set file attributes.
     fn setattr(&mut self, _req: &Request<'_>, _ino: u64, _mode: Option<u32>, _uid: Option<u32>, _gid: Option<u32>, _size: Option<u64>, _atime: Option<TimeOrNow>, _mtime: Option<TimeOrNow>, _ctime: Option<std::time::SystemTime>, _fh: Option<u64>, _crtime: Option<std::time::SystemTime>, _chgtime: Option<std::time::SystemTime>, _bkuptime: Option<std::time::SystemTime>, _flags: Option<u32>, reply: ReplyAttr) {
-        trace!("WondFS: mknod funcation called");
+        trace!("WondFS: mknod function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}, mode: {:?}, uid: {:?}, gid: {:?}, size: {:?}, atime: {:?}, mtime: {:?}, ctime: {:?}, fh: {:?}, crtime: {:?}, chgtime: {:?}, bkuptime: {:?}, flags: {:?}", ino, _mode, _uid, _gid, _size, _atime, _mtime, _ctime, _fh, _crtime, _chgtime, _bkuptime, _flags);
         if let Some(mode) = _mode {
@@ -151,7 +151,7 @@ impl Filesystem for WondFS {
 
     // Create a file node.
     fn mknod(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, mut _mode: u32, _umask: u32, _rdev: u32, reply: ReplyEntry) {
-        trace!("WondFS: mknod funcation called");
+        trace!("WondFS: mknod function called");
         let file_type = _mode & libc::S_IFMT as u32;
         if file_type != libc::S_IFREG as u32 && file_type != libc::S_IFDIR as u32 {
             debug!("WondFS: mknod implementation is incomplete. Only supports regular files, and directories. Got {:o}", _mode);
@@ -224,7 +224,7 @@ impl Filesystem for WondFS {
 
     // Create a directory.
     fn mkdir(&mut self, _req: &Request<'_>, _parent: u64, _name: &OsStr, mut _mode: u32, _umask: u32, reply: ReplyEntry) {
-        trace!("WondFS: mkdir funcation called");
+        trace!("WondFS: mkdir function called");
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
         trace!("WondFS: parent: {}, name: {}", parent, name);
@@ -292,7 +292,7 @@ impl Filesystem for WondFS {
 
     // Remove a file.
     fn unlink(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEmpty) {
-        trace!("WondFS: unlink funcation called");
+        trace!("WondFS: unlink function called");
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
         trace!("WondFS: parent: {}, name: {}", parent, name);
@@ -362,7 +362,7 @@ impl Filesystem for WondFS {
 
     // Remove a directory.
     fn rmdir(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEmpty) {
-        trace!("WondFS: rmdir funcation called");
+        trace!("WondFS: rmdir function called");
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
         trace!("WondFS: parent: {}, name: {}", parent, name);
@@ -440,7 +440,7 @@ impl Filesystem for WondFS {
 
     // Create a hard link.
     fn link(&mut self, _req: &Request<'_>, _ino: u64, _newparent: u64, _newname: &std::ffi::OsStr, reply: ReplyEntry) {
-        trace!("WondFS: link funcation called");
+        trace!("WondFS: link function called");
         let ino = _ino as u32;
         let newparent = _newparent as u32;
         let newname = _newname.to_str().unwrap().to_string();
@@ -475,7 +475,7 @@ impl Filesystem for WondFS {
 
     // Open a file.
     fn open(&mut self, _req: &Request<'_>, _ino: u64, _flags: i32, reply: ReplyOpen) {
-        trace!("WondFS: open funcation called");
+        trace!("WondFS: open function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
         let (access_mask, read, write) = match _flags & libc::O_ACCMODE {
@@ -525,7 +525,7 @@ impl Filesystem for WondFS {
 
     // Read data.
     fn read(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _offset: i64, _size: u32, _flags: i32, _lock_owner: Option<u64>, reply: ReplyData) {
-        trace!("WondFS: read funcation called");
+        trace!("WondFS: read function called");
         let ino =  _ino as u32;
         let offset = _offset as u32;
         let size = _size as u32;
@@ -557,7 +557,7 @@ impl Filesystem for WondFS {
 
     // Write data.
     fn write(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _offset: i64, _data: &[u8], _write_flags: u32, _flags: i32, _lock_owner: Option<u64>, reply: ReplyWrite) {
-        trace!("WondFS: write funcation called");
+        trace!("WondFS: write function called");
         let ino = _ino as u32;
         let offset = _offset as u32;
         let data = _data;
@@ -588,7 +588,7 @@ impl Filesystem for WondFS {
 
     // Release an open file.
     fn release(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _flags: i32, _lock_owner: Option<u64>, _flush: bool, reply: ReplyEmpty) {
-        trace!("WondFS: release funcation called");
+        trace!("WondFS: release function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
         let inode = self.inode_manager.i_get(ino);
@@ -606,7 +606,7 @@ impl Filesystem for WondFS {
 
     // Open a directory.
     fn opendir(&mut self, _req: &Request<'_>, _ino: u64, _flags: i32, reply: ReplyOpen) {
-        trace!("WondFS: opendir funcation called");
+        trace!("WondFS: opendir function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
         let (access_mask, read, write) = match _flags & libc::O_ACCMODE {
@@ -656,7 +656,7 @@ impl Filesystem for WondFS {
 
     // Read directory.
     fn readdir(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _offset: i64, mut reply: ReplyDirectory) {
-        trace!("WondFS: readdir funcation called");
+        trace!("WondFS: readdir function called");
         let ino = _ino as u32;
         let offset = _offset as i32;
         trace!("WondFS: ino: {}, offset: {}", ino, offset);
@@ -685,7 +685,7 @@ impl Filesystem for WondFS {
 
     // Release an open directory.
     fn releasedir(&mut self, _req: &Request<'_>, _ino: u64, _fh: u64, _flags: i32, reply: ReplyEmpty) {
-        trace!("WondFS: releasedir funcation called");
+        trace!("WondFS: releasedir function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
         let inode = self.inode_manager.i_get(ino);
@@ -703,7 +703,7 @@ impl Filesystem for WondFS {
 
     // Check file access permission.
     fn access(&mut self, _req: &Request<'_>, _ino: u64, _mask: i32, reply: ReplyEmpty) {
-        trace!("WondFS: access funcation called");
+        trace!("WondFS: access function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
         let inode = self.inode_manager.i_get(ino);
@@ -722,7 +722,7 @@ impl Filesystem for WondFS {
 
     // Create and open a file.
     fn create(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, mut _mode: u32, _umask: u32, _flags: i32, reply: ReplyCreate) {
-        trace!("WondFS: create funcation called");
+        trace!("WondFS: create function called");
         let parent = _parent as u32;
         let name = _name.to_str().unwrap().to_string();
         trace!("WondFS: parent: {}, name: {}", parent, name);

@@ -1,11 +1,15 @@
+//
 // Disk I/O Simulator
+//
 
+// Fake Disk Structure
 pub struct FakeDisk {
     pub size: u32,
     pub block_num: u32,
     pub data: Vec<[u8; 4096]>,
 }
 
+// Fake Disk Simple Interface Function
 impl FakeDisk {
     pub fn new(size: u32) -> FakeDisk {
         let mut data = vec![];
@@ -22,10 +26,18 @@ impl FakeDisk {
             block_num,
         }
     }
+}
 
+// Fake Disk Main Interface Function
+impl FakeDisk {
+    /// Read block from fake disk
+    /// params:
+    /// block_no - read block's block nunmber
+    /// return:
+    /// block data
     pub fn fake_disk_read(&self, block_no: u32) -> [[u8; 4096]; 128] {
         if block_no > self.block_num - 1 {
-            panic!("FakeKV: read at too big block number");
+            panic!("FakeDisk: read at too big block number");
         }
         let mut data = [[0; 4096]; 128];
         let start_index = block_no * 128;
@@ -36,6 +48,12 @@ impl FakeDisk {
         data
     }
     
+    /// Write page to fake disk
+    /// params:
+    /// address - write page's address
+    /// data - write data
+    /// return:
+    /// ()
     pub fn fake_disk_write(&mut self, address: u32, data: [u8; 4096]) {
         if address > self.size - 1 {
             panic!("FakeDisk: write at too big address");
@@ -47,9 +65,14 @@ impl FakeDisk {
         self.data[address as usize] = data;
     }
     
+    /// Erase block in fake disk
+    /// params:
+    /// block_no - erase block's block number
+    /// return:
+    /// ()
     pub fn fake_disk_erase(&mut self, block_no: u32) {
         if block_no > self.block_num - 1 {
-            panic!("FakeKV: erase at too big block number");
+            panic!("FakeDisk: erase at too big block number");
         }
         let start_index = block_no * 128;
         let end_index = (block_no + 1) * 128;
@@ -59,13 +82,13 @@ impl FakeDisk {
     }
 }
 
+// Disk I/O Simulator Module Test
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
     fn basics() {
-        // Create 4MB Block
         let mut disk = FakeDisk::new(1024);
 
         let data = [1; 4096];

@@ -1,28 +1,19 @@
+//
+// Buf Layer
+//
+
 use crate::util::lru_cache;
 use crate::tl::tl;
 use crate::util::array;
 
-#[derive(Clone, Copy)]
-pub struct Buf {
-    pub address: u32,
-    pub data: [u8; 4096],
-}
-
-impl Buf {
-    pub fn new(address: u32, data: [u8; 4096]) -> Buf {
-        Buf {
-            address: address,
-            data,
-        }
-    }
-}
-
+// Buf Layer Main Structure
 pub struct BufCache {
     pub capacity: usize,
     pub cache: lru_cache::LRUCache<Buf>,
     pub translation_layer: tl::TranslationLayer,
 }
 
+// Buf Layer Simple Interface Function
 impl BufCache {
     pub fn new() -> BufCache {
         let capacity = 1024;
@@ -33,6 +24,19 @@ impl BufCache {
         }
     }
 
+    pub fn init(&mut self) {
+        self.translation_layer.init();
+    }
+}
+
+// Buf Layer Main Interface Function
+impl BufCache {
+    /// Read page
+    /// params:
+    /// dev - device number
+    /// address - read page's address
+    /// return:
+    /// page data
     pub fn read(&mut self, dev: u8, address: u32) -> [u8; 4096] {
         let data = self.get_data(address);
         if data.is_some() {
@@ -46,11 +50,25 @@ impl BufCache {
         self.get_data(address).unwrap()
     }
 
+    /// Write page
+    /// params:
+    /// dev - device number
+    /// address - write page's address
+    /// data - write data
+    /// return:
+    /// ()
     pub fn write(&mut self, dev: u8, address: u32, data: [u8; 4096]) {
         self.put_data(address, data);
         self.translation_layer.write(address, data);
     }
 
+    /// Write block directly, bypasses write cache
+    /// params:
+    /// dev - device number
+    /// block_no - write block's block number
+    /// data - write data
+    /// return:
+    /// ()
     pub fn write_block_driect(&mut self, dev: u8, block_no: u32, data: array::Array1::<[u8; 4096]>) {
         if data.len() != 128 {
             panic!("BufCache: write block directly no available data size");
@@ -63,6 +81,12 @@ impl BufCache {
         self.translation_layer.write_block_direct(block_no, data);
     }
 
+    /// Erase block
+    /// params:
+    /// dev - device number
+    /// block_no - erase block's block number
+    /// return:
+    /// ()
     pub fn erase(&mut self, dev: u8, block_no: u32) {
         let start_address = block_no * 128;
         let end_address = (block_no + 1) * 128;
@@ -73,8 +97,9 @@ impl BufCache {
     }
 }
 
+// Buf Layer Internal Function
 impl BufCache {
-    pub fn get_data(&mut self, address: u32) -> Option<[u8; 4096]> {
+    fn get_data(&mut self, address: u32) -> Option<[u8; 4096]> {
         let data = self.cache.get(address);
         if data.is_some() {
             return Some(data.as_deref().unwrap().data);
@@ -82,16 +107,33 @@ impl BufCache {
         None
     }
 
-    pub fn put_data(&mut self, address: u32, data: [u8; 4096]) {
+    fn put_data(&mut self, address: u32, data: [u8; 4096]) {
         let buf = Buf::new(address, data);
         self.cache.put(address, buf);
     }
 
-    pub fn remove_data(&mut self, address: u32) {
+    fn remove_data(&mut self, address: u32) {
         self.cache.remove(address);
     }
 }
 
+// Simple Buf Structure
+#[derive(Clone, Copy)]
+pub struct Buf {
+    address: u32,
+    data: [u8; 4096],
+}
+
+impl Buf {
+    fn new(address: u32, data: [u8; 4096]) -> Buf {
+        Buf {
+            address: address,
+            data,
+        }
+    }
+}
+
+// Buf Layer Module Test
 #[cfg(test)]
 mod test {
     use super::*;

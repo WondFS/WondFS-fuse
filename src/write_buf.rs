@@ -1,11 +1,10 @@
+//
+// Write Buffer Pool
+//
+
 use std::collections::HashMap;
 
-#[derive(Clone, Copy)]
-pub struct WriteBuf {
-    pub address: u32,
-    pub data: [u8; 4096],
-}
-
+// Write Cache Structure
 pub struct WriteCache {
     pub capacity: usize,
     pub cache: Vec<WriteBuf>,
@@ -13,6 +12,7 @@ pub struct WriteCache {
     pub sync: bool,
 }
 
+// Write Cache Simple Interface Function
 impl WriteCache {
     pub fn new() -> WriteCache {
         WriteCache {
@@ -23,6 +23,33 @@ impl WriteCache {
         }
     }
 
+    pub fn get_size(&self) -> u32 {
+        self.capacity as u32
+    }
+
+    pub fn contains_address(&self, address: u32) -> bool {
+        self.table.contains_key(&address)
+    }
+
+    pub fn need_sync(&self) -> bool {
+        self.sync
+    }
+
+    pub fn sync(&mut self) {
+        self.sync = false;
+        self.cache.clear();
+        self.table.clear();
+    }
+}
+
+// Write Cache Main Interface Function
+impl WriteCache {
+    /// Write page to cache
+    /// params:
+    /// address - write page's address
+    /// data - write data
+    /// return:
+    /// ()
     pub fn write(&mut self, address: u32, data: [u8; 4096]) {
         let index = self.cache.len();
         if index == self.capacity {
@@ -48,6 +75,11 @@ impl WriteCache {
         }
     }
 
+    /// Get page from cache
+    /// params:
+    /// address - read page's address
+    /// return:
+    /// page data
     pub fn read(&self, address: u32) -> Option<[u8; 4096]> {
         if !self.table.contains_key(&address) {
             return None;
@@ -60,6 +92,11 @@ impl WriteCache {
         panic!("WriteBuf: read internal error");
     }
 
+    /// Get all page from cache
+    /// params:
+    /// ()
+    /// return:
+    /// all page data
     pub fn get_all(&self) -> Vec<(u32, [u8; 4096])> {
         let mut buf = vec![];
         for entry in self.cache.iter() {
@@ -68,6 +105,11 @@ impl WriteCache {
         buf
     }
 
+    /// Recall write in cache
+    /// params:
+    /// address - recall page's address
+    /// return:
+    /// ()
     pub fn recall_write(&mut self, address: u32) {
         if self.table.contains_key(&address) {
             for index in 0..self.cache.len() {
@@ -79,22 +121,25 @@ impl WriteCache {
             self.table.remove(&address);
         }
     }
+}
 
-    pub fn contains_address(&self, address: u32) -> bool {
-        self.table.contains_key(&address)
-    }
+// Simple Buf Structure
+#[derive(Clone, Copy)]
+pub struct WriteBuf {
+    pub address: u32,
+    pub data: [u8; 4096],
+}
 
-    pub fn need_sync(&self) -> bool {
-        self.sync
-    }
-
-    pub fn sync(&mut self) {
-        self.sync = false;
-        self.cache.clear();
-        self.table.clear();
+impl WriteBuf {
+    fn new(address: u32, data: [u8; 4096]) -> WriteBuf {
+        WriteBuf {
+            address: address,
+            data,
+        }
     }
 }
 
+// Write Buffer Pool Module Test
 #[cfg(test)]
 mod test {
     use super::*;
