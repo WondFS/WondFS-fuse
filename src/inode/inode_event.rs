@@ -24,29 +24,29 @@ impl InodeEventGroup {
     }
 
     pub fn debug(&self) {
-        println!("InodeEventGroup::Debug:{} {}, {}", self.inode.ino, self.need_delete, self.events.len());
-        for (index, event) in self.events.iter().enumerate() {
-            match event {
-                InodeEvent::AddContent(event) => {
-                    println!("InodeEventGroup::Debug:{}, Add index: {} offset: {} len: {} size: {} content: {:?}", index, event.index, event.offset, event.len, event.size, event.content);
-                },
-                InodeEvent::TruncateContent(event) => {
-                    println!("InodeEventGroup::Debug:{}, Truncate index: {} offset: {} len: {} size: {} o_size: {} v_address: {}", index, event.index, event.offset, event.len, event.size, event.o_size, event.v_address);
-                },
-                InodeEvent::ChangeContent(event) => {
-                    println!("InodeEventGroup::Debug:{}, Change index: {} offset: {} v_address: {}", index, event.index, event.offset, event.v_address);
-                },
-                InodeEvent::DeleteContent(event) => {
-                    println!("InodeEventGroup::Debug:{}, Delete index: {} size: {} v_address: {}", index, event.index, event.size, event.v_address);
-                },
-                InodeEvent::ModifyStat(event) => {
-                    println!("InodeEventGroup::Debug:{}, Modify size: {} uid: {} gid: {} n_link: {}", index, event.size, event.uid, event.gid, event.n_link);
-                },
-                InodeEvent::None => {
-                    println!("InodeEventGroup::Debug:{}, None", index);
-                },
-            }
-        }
+        // println!("InodeEventGroup::Debug:{} {}, {}", self.inode.ino, self.need_delete, self.events.len());
+        // for (index, event) in self.events.iter().enumerate() {
+        //     match event {
+        //         InodeEvent::AddContent(event) => {
+        //             println!("InodeEventGroup::Debug:{}, Add index: {} offset: {} len: {} size: {} content: {:?}", index, event.index, event.offset, event.len, event.size, event.content);
+        //         },
+        //         InodeEvent::TruncateContent(event) => {
+        //             println!("InodeEventGroup::Debug:{}, Truncate index: {} offset: {} len: {} size: {} o_size: {} v_address: {}", index, event.index, event.offset, event.len, event.size, event.o_size, event.v_address);
+        //         },
+        //         InodeEvent::ChangeContent(event) => {
+        //             println!("InodeEventGroup::Debug:{}, Change index: {} offset: {} v_address: {}", index, event.index, event.offset, event.v_address);
+        //         },
+        //         InodeEvent::DeleteContent(event) => {
+        //             println!("InodeEventGroup::Debug:{}, Delete index: {} size: {} v_address: {}", index, event.index, event.size, event.v_address);
+        //         },
+        //         InodeEvent::ModifyStat(event) => {
+        //             println!("InodeEventGroup::Debug:{}, Modify size: {} uid: {} gid: {} n_link: {}", index, event.size, event.uid, event.gid, event.n_link);
+        //         },
+        //         InodeEvent::None => {
+        //             println!("InodeEventGroup::Debug:{}, None", index);
+        //         },
+        //     }
+        // }
     }
 }
 

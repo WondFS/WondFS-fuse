@@ -519,10 +519,10 @@ impl Inode {
     }
 
     pub fn debug(&self) {
-        println!("Inode::Debug:{}", self.ino);
-        for (index, entry) in self.data.iter().enumerate() {
-            println!("{} offset: {} len: {} size: {} address: {} valid: {}", index, entry.offset, entry.len, entry.size, entry.address, entry.valid);
-        }
+        // println!("Inode::Debug:{}", self.ino);
+        // for (index, entry) in self.data.iter().enumerate() {
+        //     println!("{} offset: {} len: {} size: {} address: {} valid: {}", index, entry.offset, entry.len, entry.size, entry.address, entry.valid);
+        // }
     }
 }
 
