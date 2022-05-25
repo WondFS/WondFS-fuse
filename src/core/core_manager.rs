@@ -1,3 +1,7 @@
+//
+// Core Layer
+//
+
 use std::sync::Mutex;
 use crate::buf;
 use crate::core::bit;
@@ -12,18 +16,21 @@ use crate::kv::fake_kv;
 use crate::kv::raw_inode;
 use crate::gc::gc_manager;
 use crate::gc::gc_event;
-use crate::gc::gc_define::PageUsedStatus;
+use crate::gc::gc_define::*;
 
+// Core Layer Main Controller Structure
 pub struct CoreManager {
     bit: bit::BIT,
     pit: pit::PIT,
     vam: vam::VAM,
     kv: fake_kv::FakeKV,
+    stat: super_stat::SuperStat,
     gc: gc_manager::GCManager,
     journal: journal::Journal,
     buf_cache: buf::BufCache,
 }
 
+// Core Layer Simple Interface Function
 impl CoreManager {
     pub fn new() -> CoreManager {
         CoreManager {
@@ -34,20 +41,23 @@ impl CoreManager {
             gc: gc_manager::GCManager::new(),
             journal: journal::Journal::new(),
             buf_cache: buf::BufCache::new(),
+            stat: super_stat::SuperStat::new(),
         }
     }
 
-    pub fn read_sb(&mut self) {
-        todo!()
-    }
-
     pub fn mount(&mut self) {
+        self.read_sb();
         self.read_bit();
         self.read_pit();
     }
 }
 
-// KV Module
+// Core Layer Main Interface Function
+impl CoreManager {
+    
+}
+
+// Core Layer KV Module Function
 impl CoreManager {
     pub fn allocate_inode(&mut self) -> inode::Inode {
         let raw_inode = self.kv.allocate_inode();
@@ -88,7 +98,7 @@ impl CoreManager {
     }
 }
 
-// GC Module
+// Core Layer GC Module Function
 impl CoreManager {
     pub fn find_next_pos_to_write(&mut self, size: u32) -> u32 {
         let mut res;
@@ -103,7 +113,7 @@ impl CoreManager {
     }
 
     pub fn forward_gc(&mut self) {
-        let gc_group = self.gc.new_forward_gc();
+        let gc_group = self.gc.new_gc_event(GCStrategy::Forward);
         self.dispose_gc_group(gc_group);
     }
 
@@ -111,7 +121,7 @@ impl CoreManager {
         let flag = false;
         loop {
             if flag {
-                let gc_group = self.gc.new_forward_gc();
+                let gc_group = self.gc.new_gc_event(GCStrategy::BackgroundSimple);
                 self.dispose_gc_group(gc_group);
             }
         }
@@ -187,12 +197,23 @@ impl CoreManager {
 }
 
 
-// 管理Super Region
+// Core Layer Super Region Function
 impl CoreManager {
+    pub fn read_sb(&mut self) {
+        let data = self.read_block(0, false);
+        self.stat.build(&data);
+        self.init_translation_layer();
+    }
 
+    pub fn init_translation_layer(&mut self) {
+        self.buf_cache.set_block_num(self.stat.get_block_num());
+        self.buf_cache.set_use_max_block_no(self.stat.get_reserved_offset() - 1);
+        self.buf_cache.set_max_block_no(self.stat.get_block_num() - 1);
+        self.buf_cache.init_translation_layer();
+    }
 }
 
-// 管理BIT Region
+// Core Layer Bit Region Function
 impl CoreManager {
     pub fn read_bit(&mut self) {
         let mut data_1 = self.read_block(1, false);
@@ -262,7 +283,7 @@ impl CoreManager {
     }
 }
 
-// 管理PIT Region
+// Core Layer PIT Region Function
 impl CoreManager {
     pub fn read_pit(&mut self) {
         let mut data_1 = self.read_block(3, false);
@@ -298,6 +319,7 @@ impl CoreManager {
                 self.set_page(index, PageUsedStatus::Busy(ino));
             }
         }
+        self.pit.set_page_num(self.stat.get_main_size() * self.stat.get_page_num_per_block());
     }
 
     pub fn update_pit(&mut self, address: u32, status: u32) {
@@ -340,7 +362,7 @@ impl CoreManager {
     }
 }
 
-// 管理journal Region
+// Core Layer Journal Region Function
 impl CoreManager {
     pub fn read_journal(&mut self) {
         let data = self.read_block(5, false);
@@ -459,9 +481,9 @@ impl CoreManager {
     }
 }
 
-// 调用下层的接口，对上不可见
+// Core Layer Internal Function
 impl CoreManager {
-    pub fn read_page(&mut self, address: u32, is_main: bool) -> [u8; 4096] {
+    fn read_page(&mut self, address: u32, is_main: bool) -> [u8; 4096] {
         if is_main {
             self.buf_cache.read(0, address + 5 * 128)
         } else {
@@ -469,7 +491,7 @@ impl CoreManager {
         }
     }
 
-    pub fn read_block(&mut self, block_no: u32, is_main: bool) -> array::Array1::<[u8; 4096]> {
+    fn read_block(&mut self, block_no: u32, is_main: bool) -> array::Array1::<[u8; 4096]> {
         let max_address = (block_no + 1) * 128;
         let mut address = max_address - 128;
         let mut block = vec![];
@@ -486,7 +508,7 @@ impl CoreManager {
         data
     }
 
-    pub fn write_page(&mut self, address: u32, data: [u8; 4096], is_main: bool) {
+    fn write_page(&mut self, address: u32, data: [u8; 4096], is_main: bool) {
         if is_main  {
             self.buf_cache.write(0, address + 5 * 128, data);
         } else {
@@ -494,7 +516,7 @@ impl CoreManager {
         }
     }
 
-    pub fn write_block(&mut self, block_no: u32, data: &array::Array1::<[u8; 4096]>, is_main: bool) {
+    fn write_block(&mut self, block_no: u32, data: &array::Array1::<[u8; 4096]>, is_main: bool) {
         if data.len() != 128 {
             panic!("CoreManager: write block not matched size");
         }
@@ -504,7 +526,7 @@ impl CoreManager {
         }
     }
 
-    pub fn erase_block(&mut self, block_no: u32, is_main: bool) {
+    fn erase_block(&mut self, block_no: u32, is_main: bool) {
         if is_main {
             self.buf_cache.erase(0, block_no + 5);
         } else {
@@ -513,7 +535,7 @@ impl CoreManager {
     }
 }
 
-// 对上层提供的读写接口
+// Core Layer Main Interface Function
 impl CoreManager {
     pub fn read_data(&mut self, v_address: u32) -> [u8; 4096] {
         let address = self.vam.get_physic_address(v_address).unwrap();
@@ -637,8 +659,8 @@ impl CoreManager {
     }
 }
 
+// 
 impl CoreManager {
-    // 注意这里不进行虚拟地址的转换
     pub fn transfer_raw_inode_to_inode(raw_inode: &raw_inode::RawInode) -> inode::Inode {
         let file_type;
         let mut data = vec![];
@@ -675,7 +697,6 @@ impl CoreManager {
         }
     }
     
-    // 注意这里不进行虚拟地址的转换
     pub fn transfer_inode_to_raw_inode(inode: &inode::Inode) -> raw_inode::RawInode {
         let file_type;
         let mut data = vec![];
@@ -896,8 +917,7 @@ mod test {
         manager.update_bit(1, true);
         manager.update_pit(1, 1);
         assert_eq!(manager.find_next_pos_to_write(10), 2);
-        assert_eq!(manager.gc.find_next_pos_to_write_except(10, 0).unwrap(), 128);
-        let gc_group = manager.gc.new_forward_gc();
+        let gc_group = manager.gc.new_gc_event(GCStrategy::Forward);
         assert_eq!(gc_group.events[0], gc_event::GCEvent::Move(gc_event::MoveGCEvent{ index: 0, ino: 1, size: 2, o_address: 0, d_address: 128 }));
         assert_eq!(gc_group.events[1], gc_event::GCEvent::Erase(gc_event::EraseGCEvent{ index: 1, block_no: 0 }));
         manager.allocate_inode();

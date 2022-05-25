@@ -23,10 +23,6 @@ impl BufCache {
             translation_layer: tl::TranslationLayer::new(),
         }
     }
-
-    pub fn init(&mut self) {
-        self.translation_layer.init();
-    }
 }
 
 // Buf Layer Main Interface Function
@@ -94,6 +90,29 @@ impl BufCache {
             self.remove_data(address);
         }
         self.translation_layer.erase(block_no);
+    }
+}
+
+// Translation Layer Interface Function
+impl BufCache {
+    pub fn get_disk_speed(&self) -> (u32, u32) {
+        self.translation_layer.get_disk_speed()
+    }
+
+    pub fn set_block_num(&mut self, block_num: u32) {
+        self.translation_layer.set_block_num(block_num);
+    }
+
+    pub fn set_use_max_block_no(&mut self, use_max_block_no: u32) {
+        self.translation_layer.set_use_max_block_no(use_max_block_no);
+    }
+
+    pub fn set_max_block_no(&mut self, max_block_no: u32) {
+        self.translation_layer.set_max_block_no(max_block_no);
+    }
+
+    pub fn init_translation_layer(&mut self) {
+        self.translation_layer.init();
     }
 }
 

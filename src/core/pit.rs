@@ -1,9 +1,14 @@
+//
+// PIT Region
+//
+
 use std::collections::HashMap;
 use crate::util::array;
 
-const MAGIC_NUMBER_1: u32 = 0x7777dddd;
-const MAGIC_NUMBER_2: u32 = 0x7777eeee;
+const MAGIC_NUMBER_1: u32 = 0x7777dddd; // 标志PIT Region的存储方式为Map
+const MAGIC_NUMBER_2: u32 = 0x7777eeee; // 标志PIT Region的存储方式为Serial
 
+// PIT Storage Stragegy
 #[derive(PartialEq)]
 pub enum PITStrategy {
     Map,
@@ -11,13 +16,15 @@ pub enum PITStrategy {
     None,
 }
 
+// PIT Region Main Structure
 pub struct PIT {
     pub page_num: u32,
-    pub table: HashMap<u32, u32>,  // page -> ino
+    pub table: HashMap<u32, u32>,  // address -> ino
     pub sync: bool,                // true 需要持久化到磁盘中
     pub is_op: bool,               // true 等调用end_op才持久化到磁盘中
 }
 
+// PIT Region Simple Interface Function
 impl PIT {
     pub fn new() -> PIT {
         PIT {
@@ -30,16 +37,6 @@ impl PIT {
 
     pub fn set_page_num(&mut self, page_num: u32) {
         self.page_num = page_num;
-    }
-
-    pub fn choose_strategy(&self) -> PITStrategy {
-        let num = self.table.len();
-        let multiples = self.page_num / num as u32;
-        if multiples > 2 {
-            PITStrategy::Map
-        } else {
-            PITStrategy::Serial
-        }
     }
 
     pub fn init_page(&mut self, address: u32, status: u32) {
@@ -81,6 +78,34 @@ impl PIT {
         }
     }
 
+    pub fn need_sync(&self) -> bool {
+        if self.is_op {
+            return false;
+        }
+        self.sync
+    }
+
+    pub fn sync(&mut self) {
+        self.sync = false;
+    }
+
+    pub fn begin_op(&mut self) {
+        self.is_op = true;
+    }
+
+    pub fn end_op(&mut self) {
+        self.is_op = false;
+    }
+
+}
+
+// PIT Region Main Interface Function
+impl PIT {
+    /// Encode PIT to block data for write in disk
+    /// param:
+    /// ()
+    /// return:
+    /// block data
     pub fn encode(&self) -> array::Array1::<u8> {
         let strategy = self.choose_strategy();
         if strategy == PITStrategy::Map {
@@ -89,8 +114,21 @@ impl PIT {
             self.encode_serial()
         }
     }
+}
 
-    pub fn encode_serial(&self) -> array::Array1::<u8> {
+// PIT Region Internal Function
+impl PIT {
+    fn choose_strategy(&self) -> PITStrategy {
+        let num = self.table.len();
+        let multiples = self.page_num / num as u32;
+        if multiples > 2 {
+            PITStrategy::Map
+        } else {
+            PITStrategy::Serial
+        }
+    }
+
+    fn encode_serial(&self) -> array::Array1::<u8> {
         let mut res = array::Array1::<u32>::new(128 * 4096 / 4 - 2);
         res.init(0);
         for (key, value) in &self.table {
@@ -116,7 +154,7 @@ impl PIT {
         data
     }
 
-    pub fn encode_map(&self) -> array::Array1::<u8> {
+    fn encode_map(&self) -> array::Array1::<u8> {
         let mut data = array::Array1::<u8>::new(128 * 4096);
         data.init(0);
         data.set(0, 0x77);
@@ -146,26 +184,6 @@ impl PIT {
         }
         data
     }
-
-    pub fn need_sync(&self) -> bool {
-        if self.is_op {
-            return false;
-        }
-        self.sync
-    }
-
-    pub fn sync(&mut self) {
-        self.sync = false;
-    }
-
-    pub fn begin_op(&mut self) {
-        self.is_op = true;
-    }
-
-    pub fn end_op(&mut self) {
-        self.is_op = false;
-    }
-
 }
 
 pub struct DataRegion<'a> {

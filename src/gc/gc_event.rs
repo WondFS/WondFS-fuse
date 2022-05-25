@@ -1,3 +1,4 @@
+// GC Event Group Structure
 pub struct GCEventGroup {
     pub events: Vec<GCEvent>,
 }
@@ -10,6 +11,7 @@ impl GCEventGroup {
     }
 }
 
+// GC Event Structure
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum GCEvent {
     Erase(EraseGCEvent),
@@ -29,14 +31,15 @@ impl GCEvent {
     }
 }
 
-// 以Block为单位
+
+// CC Erase Event Structure
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct EraseGCEvent {
     pub index: u32,
     pub block_no: u32,
 }
 
-// 以Page为单位
+// GC Move Event Structure
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct MoveGCEvent {
     pub index: u32,

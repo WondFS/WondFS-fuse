@@ -63,6 +63,18 @@ impl TranslationLayer {
     pub fn get_disk_speed(&self) -> (u32, u32) {
         (self.read_speed, self.write_speed)
     }
+
+    pub fn set_block_num(&mut self, block_num: u32) {
+        self.block_num = block_num;
+    }
+
+    pub fn set_use_max_block_no(&mut self, use_max_block_no: u32) {
+        self.use_max_block_no = use_max_block_no;
+    }
+
+    pub fn set_max_block_no(&mut self, max_block_no: u32) {
+        self.max_block_no = max_block_no;
+    }
 }
 
 // Translation Layer Main Interface Function
@@ -230,6 +242,9 @@ impl TranslationLayer {
             let address = block_no * 128 + index as u32;
             let signature = self.get_address_sign(address);
             if signature.is_none() {
+                continue;
+            }
+            if page == [0; 4096] {
                 continue;
             }
             let ret = check_center::CheckCenter::check(&page, &signature.as_ref().unwrap());

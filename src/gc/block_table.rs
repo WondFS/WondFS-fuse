@@ -1,79 +1,16 @@
+//
+// Block Table
+//
+
 use crate::gc::gc_define::*;
-use crate::gc::gc_manager;
 
-pub struct BlockInfo {
-    pub size: u32,
-    pub block_no: u32,
-    pub reserved_size: u32,
-    pub reserved_offset: u32,
-    pub dirty_num: u32,
-    pub clean_num: u32,
-    pub used_num: u32,
-    pub used_map: Vec<PageUsedStatus>,
-    pub erase_count: u32,
-    pub last_erase_time: u32,
-    pub average_age: u32,
-}
-
-impl BlockInfo {
-    pub fn set_page(&mut self, address: u32, status: PageUsedStatus) {
-        let offset = address as i32 - self.block_no as i32 * 128;
-        if offset < 0 || offset > 127 {
-            panic!("BlockInfo: set page at not valid address");
-        }
-        let origin_status = self.used_map[offset as usize];
-        match origin_status {
-            PageUsedStatus::Clean => self.clean_num -= 1,
-            PageUsedStatus::Dirty => self.dirty_num -= 1,
-            PageUsedStatus::Busy(_) => self.dirty_num -= 1,
-        }
-        match status {
-            PageUsedStatus::Clean => self.clean_num += 1,
-            PageUsedStatus::Dirty => {
-                self.dirty_num += 1;
-                self.reserved_offset += 1;
-                self.reserved_size -= 1;
-            },
-            PageUsedStatus::Busy(_) => {
-                self.dirty_num += 1;
-                self.reserved_offset += 1;
-                self.reserved_size -= 1;
-            },
-        }
-        self.used_map[offset as usize] = status;
-    }
-
-    pub fn get_page(&self, address: u32) -> PageUsedStatus {
-        let offset = address as i32 - self.block_no as i32 * 128;
-        if offset < 0 || offset > 127 {
-            panic!("BlockInfo: get page at not valid address");
-        }
-        self.used_map[offset as usize]
-    }
-
-    pub fn erase(&mut self) {
-        self.average_age = 0;
-        self.reserved_offset = 0;
-        self.reserved_size = 128;
-        self.used_map.clear();
-        self.dirty_num = 0;
-        self.used_num = 0;
-        self.clean_num = 128;
-        for _ in 0..128 {
-            self.used_map.push(PageUsedStatus::Clean);
-        }
-    }
-
-    pub fn get_utilize_ratio(&self) -> f32 {
-        (self.clean_num + self.used_num) as f32 / self.dirty_num as f32
-    }
-}
-
+// Block Table Structure
 pub struct BlockTable {
     pub size: u32,
     pub table: Vec<BlockInfo>,
 }
 
+// Block Table Simple Interface Function
 impl BlockTable {
     pub fn new(size: u32) -> BlockTable {
         let mut table = vec![];
@@ -102,7 +39,10 @@ impl BlockTable {
             table,
         }
     }
+}
 
+// Block Table Main Interface Function
+impl BlockTable {
     pub fn get_block_info(&self, block_no: u32) -> &BlockInfo {
         if block_no >= self.size {
             panic!("BlockTable: get block at too big block_no");
@@ -159,6 +99,76 @@ impl BlockTable {
     }
 }
 
+// Block Infomation Structure
+pub struct BlockInfo {
+    pub size: u32,
+    pub block_no: u32,
+    pub reserved_size: u32,
+    pub reserved_offset: u32,
+    pub erase_count: u32,
+    pub last_erase_time: u32,
+    pub average_age: u32,
+    dirty_num: u32,
+    clean_num: u32,
+    used_num: u32,
+    used_map: Vec<PageUsedStatus>,
+}
+
+impl BlockInfo {
+    pub fn set_page(&mut self, address: u32, status: PageUsedStatus) {
+        let offset = address as i32 - self.block_no as i32 * 128;
+        if offset < 0 || offset > 127 {
+            panic!("BlockInfo: set page at not valid address");
+        }
+        let origin_status = self.used_map[offset as usize];
+        match origin_status {
+            PageUsedStatus::Clean => self.clean_num -= 1,
+            PageUsedStatus::Dirty => self.dirty_num -= 1,
+            PageUsedStatus::Busy(_) => self.dirty_num -= 1,
+        }
+        match status {
+            PageUsedStatus::Clean => self.clean_num += 1,
+            PageUsedStatus::Dirty => {
+                self.dirty_num += 1;
+                self.reserved_offset += 1;
+                self.reserved_size -= 1;
+            },
+            PageUsedStatus::Busy(_) => {
+                self.dirty_num += 1;
+                self.reserved_offset += 1;
+                self.reserved_size -= 1;
+            },
+        }
+        self.used_map[offset as usize] = status;
+    }
+
+    pub fn get_page(&self, address: u32) -> PageUsedStatus {
+        let offset = address as i32 - self.block_no as i32 * 128;
+        if offset < 0 || offset > 127 {
+            panic!("BlockInfo: get page at not valid address");
+        }
+        self.used_map[offset as usize]
+    }
+
+    pub fn erase(&mut self) {
+        self.average_age = 0;
+        self.reserved_offset = 0;
+        self.reserved_size = 128;
+        self.used_map.clear();
+        self.dirty_num = 0;
+        self.used_num = 0;
+        self.clean_num = 128;
+        for _ in 0..128 {
+            self.used_map.push(PageUsedStatus::Clean);
+        }
+    }
+
+    pub fn get_utilize_ratio(&self) -> f32 {
+        (self.clean_num + self.used_num) as f32 / self.dirty_num as f32
+    }
+}
+
+// Block Table Module Test
 #[cfg(test)]
 mod test {
     use super::*;

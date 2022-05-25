@@ -1,29 +1,37 @@
+//
+// BIT Region
+//
+
 use std::collections::HashMap;
 use crate::util::array;
+
+const MAGIC_NUMBER: u32 = 0x5555dddd;
 
 // BIT Segment Disk Layout
 // 16字节 block中的page使用情况
 // 4字节 上次擦除时间
 // 4字节 擦除次数
-// 8字节 保留字段
+// 4字节 生命周期
+// 4字节 保留字段
 
+// BIT Segment Structure
 #[derive(Copy, Clone)]
 pub struct BITSegement {
     pub used_map: u128,
     pub last_erase_time: u32,
     pub erase_count: u32,
     pub average_age: u32,
-    pub reserved: [u8; 8],
+    pub reserved: [u8; 4],
 }
 
-const MAGIC_NUMBER: u32 = 0x5555dddd;
-
+// BIT Region Main Structure
 pub struct BIT {
     pub table: HashMap<u32, BITSegement>, // true: dirty/used false: clean
     pub sync: bool,                       // true 需要持久化到磁盘中
     pub is_op: bool,                      // true 等调用end_op才持久化到磁盘中
 }
 
+// BIT Region Simple Interface Function
 impl BIT {
     pub fn new() -> BIT {
         BIT {
@@ -62,7 +70,7 @@ impl BIT {
             panic!("BIT: get page not that page");
         }
         let bitmap = self.table.get(&block_no).unwrap().used_map;
-        bitmap & (1 << (127 - offset)) == 0
+        ((bitmap >> (127 - offset)) & 1) == 1 
     }
 
     pub fn set_page(&mut self, address: u32, status: bool) {
@@ -78,6 +86,7 @@ impl BIT {
             false => tag = 0,
         }
         bitmap = bitmap | (tag << (127 - offset));
+        self.table.get_mut(&block_no).unwrap().used_map = bitmap;
         self.sync = true;
     }
 
@@ -129,6 +138,33 @@ impl BIT {
         }
     }
 
+    pub fn need_sync(&self) -> bool {
+        if self.is_op {
+            return false;
+        }
+        self.sync
+    }
+
+    pub fn sync(&mut self) {
+        self.sync = false;
+    }
+
+    pub fn begin_op(&mut self) {
+        self.is_op = true;
+    }
+
+    pub fn end_op(&mut self) {
+        self.is_op = false;
+    }
+}
+
+// BIT Region Main Interface Function
+impl BIT {
+    /// Encode BIT to block data for write in disk
+    /// param:
+    /// ()
+    /// return:
+    /// block data
     pub fn encode(&self) -> array::Array1<u8> {
         let mut data = array::Array1::<u8>::new(128 * 4096);
         data.init(0);
@@ -141,6 +177,7 @@ impl BIT {
             let bit_map = segment.used_map;
             let last_erase_time = segment.last_erase_time;
             let erase_count = segment.erase_count;
+            let average_age = segment.average_age;
             let byte_1 = (bit_map >> 120) as u8;
             let byte_2 = (bit_map >> 112) as u8;
             let byte_3 = (bit_map >> 104) as u8;
@@ -189,30 +226,19 @@ impl BIT {
             data.set(start_index + 21, byte_2);
             data.set(start_index + 22, byte_3);
             data.set(start_index + 23, byte_4);
-            for i in 0..8 {
-                data.set(start_index + 24 + i as u32, segment.reserved[i]);
+            let byte_1 = (average_age >> 24) as u8;
+            let byte_2 = (average_age >> 16) as u8;
+            let byte_3 = (average_age >> 8) as u8;
+            let byte_4 = average_age as u8;
+            data.set(start_index + 24, byte_1);
+            data.set(start_index + 25, byte_2);
+            data.set(start_index + 26, byte_3);
+            data.set(start_index + 27, byte_4);
+            for i in 0..4 {
+                data.set(start_index + 28 + i as u32, segment.reserved[i]);
             }
         }
         data
-    }
-
-    pub fn need_sync(&self) -> bool {
-        if self.is_op {
-            return false;
-        }
-        self.sync
-    }
-
-    pub fn sync(&mut self) {
-        self.sync = false;
-    }
-
-    pub fn begin_op(&mut self) {
-        self.is_op = true;
-    }
-
-    pub fn end_op(&mut self) {
-        self.is_op = false;
     }
 }
 
@@ -266,9 +292,14 @@ impl Iterator for DataRegion<'_> {
             let byte_3 = (self.data.get((self.count + 22) / 4096)[((self.count + 22) % 4096) as usize] as u32) << 8;
             let byte_4 = self.data.get((self.count + 23) / 4096)[((self.count + 23) % 4096) as usize] as u32;
             let erase_count = byte_1 + byte_2 + byte_3 + byte_4;
-            let mut reserved = [0; 8];
-            for i in 0..8 {
-                reserved[i] = self.data.get((self.count + 24 + i as u32) / 4096)[((self.count + 24 + i as u32) % 4096) as usize]
+            let byte_1 = (self.data.get((self.count + 24) / 4096)[((self.count + 24) % 4096) as usize] as u32) << 24;
+            let byte_2 = (self.data.get((self.count + 25) / 4096)[((self.count + 25) % 4096) as usize] as u32) << 16;
+            let byte_3 = (self.data.get((self.count + 26) / 4096)[((self.count + 26) % 4096) as usize] as u32) << 8;
+            let byte_4 = self.data.get((self.count + 27) / 4096)[((self.count + 27) % 4096) as usize] as u32;
+            let average_age = byte_1 + byte_2 + byte_3 + byte_4;
+            let mut reserved = [0; 4];
+            for i in 0..4 {
+                reserved[i] = self.data.get((self.count + 28 + i as u32) / 4096)[((self.count + 28 + i as u32) % 4096) as usize]
             }
             self.count += 32;
             self.index += 1;
@@ -277,7 +308,7 @@ impl Iterator for DataRegion<'_> {
                 last_erase_time,
                 erase_count,
                 reserved,
-                average_age: 0,
+                average_age,
             }))
         } else {
             None
@@ -285,6 +316,7 @@ impl Iterator for DataRegion<'_> {
     }
 }
 
+// BIT Region Module Test
 #[cfg(test)]
 mod test {
     use crate::core::core_manager::CoreManager;
@@ -312,8 +344,6 @@ mod test {
         data.set(121, temp);
         let iter = DataRegion::new(&data);
         for (block_no, segment) in iter {
-            if block_no == (100 * 128 - 1) + 9 {
-            }
             bit.init_bit_segment(block_no, segment);
         }
         assert_eq!(CoreManager::transfer(&bit.encode()), data);
