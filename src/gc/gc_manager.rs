@@ -24,7 +24,7 @@ impl GCManager {
             hot_blocks: vec![],
             normal_blocks: vec![],
             cold_blocks: vec![],
-            block_table: block_table::BlockTable::new(8),
+            block_table: block_table::BlockTable::new(20),
         }
     }
 }

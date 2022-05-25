@@ -94,7 +94,7 @@ impl BIT {
         if !self.table.contains_key(&block_no) {
             panic!("BIT: get last erase time not that block");
         }
-        self.table.get(&block_no).unwrap().erase_count
+        self.table.get(&block_no).unwrap().last_erase_time
     }
 
     pub fn set_last_erase_time(&mut self, block_no: u32, time: u32) {
@@ -117,6 +117,21 @@ impl BIT {
             panic!("BIT: set erase count not that block");
         }
         self.table.get_mut(&block_no).unwrap().erase_count = count;
+        self.sync = true;
+    }
+
+    pub fn get_average_age(&self, block_no: u32) -> u32 {
+        if !self.table.contains_key(&block_no) {
+            panic!("BIT: get average age not that block");
+        }
+        self.table.get(&block_no).unwrap().average_age
+    }
+
+    pub fn set_average_age(&mut self, block_no: u32, age: u32) {
+        if !self.table.contains_key(&block_no) {
+            panic!("BIT: set average age not that block");
+        }
+        self.table.get_mut(&block_no).unwrap().average_age = age;
         self.sync = true;
     }
     
@@ -245,11 +260,12 @@ impl BIT {
 pub struct DataRegion<'a> {
     count: u32,
     index: u32,
+    num: u32,
     data: &'a array::Array1<[u8; 4096]>,
 }
 
 impl DataRegion<'_> {
-    pub fn new(data: &array::Array1::<[u8; 4096]>) -> DataRegion {
+    pub fn new(data: &array::Array1::<[u8; 4096]>, num: u32) -> DataRegion {
         if data.len() != 128 {
             panic!("DataRegion: new not matched size");
         }
@@ -257,6 +273,7 @@ impl DataRegion<'_> {
             count: 32,
             index: 0,
             data,
+            num
         }
     }
 }
@@ -264,7 +281,7 @@ impl DataRegion<'_> {
 impl Iterator for DataRegion<'_> {
     type Item = (u32, BITSegement);
     fn next(&mut self) -> Option<Self::Item> {
-        if self.count < 128 * 4096 {
+        if self.count < 128 * 4096 && (self.index < self.num || self.num == 0) {
             let byte_1 = (self.data.get(self.count / 4096)[(self.count % 4096) as usize] as u128) << 120;
             let byte_2 = (self.data.get((self.count + 1) / 4096)[((self.count + 1) % 4096) as usize] as u128) << 112;
             let byte_3 = (self.data.get((self.count + 2) / 4096)[((self.count + 2) % 4096) as usize] as u128) << 104;
@@ -342,7 +359,7 @@ mod test {
         let mut temp = data.get(121);
         temp[2332] = 123;
         data.set(121, temp);
-        let iter = DataRegion::new(&data);
+        let iter = DataRegion::new(&data, 0);
         for (block_no, segment) in iter {
             bit.init_bit_segment(block_no, segment);
         }

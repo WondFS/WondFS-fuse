@@ -25,16 +25,16 @@ impl SuperStat {
     pub fn new() -> SuperStat {
         SuperStat {
             magic_code: 0,
-            block_num: 0,
-            super_block_num: 0,
-            bit_block_num: 0,
-            pit_block_num: 0,
-            journal_block_num: 0,
-            kv_block_num: 0,
-            main_area_block_num: 0,
-            reserved_block_num: 0,
-            page_size: 0,
-            page_num_per_block: 0,
+            block_num: 32,
+            super_block_num: 1,
+            bit_block_num: 1,
+            pit_block_num: 1,
+            journal_block_num: 1,
+            kv_block_num: 4,
+            main_area_block_num: 20,
+            reserved_block_num: 4,
+            page_size: 4096,
+            page_num_per_block: 128,
         }
     }
 

@@ -200,8 +200,8 @@ impl CoreManager {
 // Core Layer Super Region Function
 impl CoreManager {
     pub fn read_sb(&mut self) {
-        let data = self.read_block(0, false);
-        self.stat.build(&data);
+        // let data = self.read_block(0, false);
+        // self.stat.build(&data);
         self.init_translation_layer();
     }
 
@@ -235,7 +235,7 @@ impl CoreManager {
     }
 
     pub fn set_bit(&mut self, data: &array::Array1::<[u8; 4096]>) {
-        let iter = bit::DataRegion::new(&data);
+        let iter = bit::DataRegion::new(&data, 20);
         for (block_no, segment) in iter {
             let bit_map = segment.used_map;
             self.bit.init_bit_segment(block_no, segment);
@@ -258,6 +258,21 @@ impl CoreManager {
             true => self.set_page(address, PageUsedStatus::Dirty),
             false => self.set_page(address, PageUsedStatus::Clean),
         }
+        self.sync_bit();
+    }
+
+    pub fn set_last_erase_time(&mut self, block_no: u32, time: u32) {
+        self.bit.set_last_erase_time(block_no, time);
+        self.sync_bit();
+    }
+
+    pub fn set_erase_count(&mut self, block_no: u32, count: u32) {
+        self.bit.set_erase_count(block_no, count);
+        self.sync_bit();
+    }
+
+    pub fn set_average_age(&mut self, block_no: u32, age: u32) {
+        self.bit.set_average_age(block_no, age);
         self.sync_bit();
     }
 
@@ -825,8 +840,13 @@ mod test {
     #[test]
     fn bit() {
         let mut manager = init_test();
+        manager.bit_end_op();
         manager.update_bit(100, true);
         manager.update_bit(200, true);
+        manager.set_erase_count(10, 100);
+        manager.set_average_age(2, 10);
+        manager.set_last_erase_time(3, 4287827);
+        manager.bit_end_op();
         assert_eq!(manager.bit.need_sync(), false);
         let block1 = manager.read_block(1, false);
         let block2 = manager.read_block(2, false);
@@ -835,15 +855,30 @@ mod test {
                 assert_eq!(*byte, 0);
             }
         }
-        assert_eq!(block1.get(0)[12]>>4 & 1, 1);
-        assert_eq!(block1.get(0)[25] & 1, 1);
+        let mut bit = bit::BIT::new();
+        let iter = bit::DataRegion::new(&block1, 20);
+        for (block_no, segment) in iter {
+            bit.init_bit_segment(block_no, segment);
+        }
+        assert_eq!(bit.get_page(100), true);
+        assert_eq!(bit.get_page(100), true);
+        assert_eq!(bit.get_erase_count(10), 100);
+        assert_eq!(bit.get_average_age(2), 10);
+        assert_eq!(bit.get_last_erase_time(3), 4287827);
     }
 
     #[test]
     fn pit() {
         let mut manager = init_test();
+        manager.pit_begin_op();
         manager.update_pit(100, 67);
         manager.update_pit(200, 223);
+        manager.update_pit(67, 45);
+        manager.update_pit(1023, 3344);
+        manager.update_pit(1024, 2349);
+        manager.dirty_pit(1024);
+        manager.clean_pit(200);
+        manager.pit_end_op();
         assert_eq!(manager.pit.need_sync(), false);
         let block1 = manager.read_block(3, false);
         let block2 = manager.read_block(4, false);
@@ -852,42 +887,24 @@ mod test {
                 assert_eq!(*byte, 0);
             }
         }
-        let byte1 = (block1.get(0)[400] as u32) << 24;
-        let byte2 = (block1.get(0)[401] as u32) << 16;
-        let byte3 = (block1.get(0)[402] as u32) << 8;
-        let byte4 = block1.get(0)[403] as u32;
-        let temp = byte1 + byte2 + byte3 + byte4;
-        assert_eq!(temp, 67);
-        let byte1 = (block1.get(0)[800] as u32) << 24;
-        let byte2 = (block1.get(0)[801] as u32) << 16;
-        let byte3 = (block1.get(0)[802] as u32) << 8;
-        let byte4 = block1.get(0)[803] as u32;
-        let temp = byte1 + byte2 + byte3 + byte4;
-        assert_eq!(temp, 223);
-        manager.update_pit(1024, 2349);
-        let block = manager.read_block(3, false);
-        let byte1 = (block.get(1)[0] as u32) << 24;
-        let byte2 = (block.get(1)[1] as u32) << 16;
-        let byte3 = (block.get(1)[2] as u32) << 8;
-        let byte4 = block.get(1)[3] as u32;
-        let temp = byte1 + byte2 + byte3 + byte4;
-        assert_eq!(temp, 2349);
-        manager.dirty_pit(1024);
-        let block = manager.read_block(3, false);
-        let byte1 = (block.get(1)[0] as u32) << 24;
-        let byte2 = (block.get(1)[1] as u32) << 16;
-        let byte3 = (block.get(1)[2] as u32) << 8;
-        let byte4 = block.get(1)[3] as u32;
-        let temp = byte1 + byte2 + byte3 + byte4;
-        assert_eq!(temp, 0);
-        manager.clean_pit(200);
-        let block = manager.read_block(3, false);
-        let byte1 = (block.get(0)[800] as u32) << 24;
-        let byte2 = (block.get(0)[801] as u32) << 16;
-        let byte3 = (block.get(0)[802] as u32) << 8;
-        let byte4 = block.get(0)[803] as u32;
-        let temp = byte1 + byte2 + byte3 + byte4;
-        assert_eq!(temp, 0);
+        let mut pit = pit::PIT::new();
+        let mut startegy = pit::PITStrategy::None;
+        if block1.get(0)[0] == 0x77 && block1.get(0)[1] == 0x77 && block1.get(0)[2] == 0xdd && block1.get(0)[3] == 0xdd {
+            startegy = pit::PITStrategy::Map;
+        }
+        if block1.get(0)[119] == 0x77 && block1.get(0)[120] == 0x77 && block1.get(0)[121] == 0xee && block1.get(0)[122] == 0xee {
+            startegy = pit::PITStrategy::Serial;
+        }
+        let iter = pit::DataRegion::new(&block1, startegy);
+        for (index, ino) in iter {
+            if ino != 0 {
+                pit.init_page(index, ino);
+            }
+        }
+        pit.set_page_num(20 * 128);
+        assert_eq!(pit.get_page(100), 67);
+        assert_eq!(pit.get_page(67), 45);
+        assert_eq!(pit.get_page(1023), 3344);
     }
 
     #[test]
