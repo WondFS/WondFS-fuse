@@ -144,22 +144,20 @@ impl CoreManager {
         CoreManager::sort_gc_event(&mut gc_group);
         self.journal_begin_op();
         self.update_journal(&gc_group);
-        self.sync_journal();
         self.journal_end_op();
+        self.bit_begin_op();
+        self.pit_begin_op();
         for event in gc_group.events {
             match event {
                 gc_event::GCEvent::Erase(event) => {
-                    self.bit_begin_op();
-                    self.pit_begin_op();
                     let start_index = event.block_no * 128;
                     let end_index = (event.block_no + 1) * 128;
                     for i in start_index..end_index {
                         self.update_bit(i, false);
                         self.clean_pit(i);
                     }
-                    self.bit_end_op();
-                    self.pit_end_op();
                     self.erase_block(event.block_no, true);
+                    self.erase_block_in_block_table(event.block_no);
                 }
                 gc_event::GCEvent::Move(event) => {
                     let o_address = event.o_address;
@@ -192,6 +190,8 @@ impl CoreManager {
                 _ => ()
             }
         }
+        self.bit_end_op();
+        self.pit_end_op();
         self.clear_journal();
     }
 }
@@ -444,46 +444,33 @@ impl CoreManager {
             self.update_bit(i, false);
             self.clean_pit(i);
         }
-        let mut index = 0;
-        let mut o_address = 0;
-        let mut d_address = 0;
-        let mut size = 0;
-        let mut ino = 0;
-        while index < self.journal.table.len() {
-            
+        for entry in &self.journal.table.clone() {
+            let o_address = *entry.0;
+            let d_address = *entry.1;
+            let ino = self.pit.get_page(o_address);
+            let data = self.read_page(o_address, true);
+            let v_address = self.vam.get_virtual_address(o_address);
+            if v_address.is_some() {
+                self.vam.update_map(d_address, v_address.unwrap());
+            }
+            self.write_page(d_address, data, true);
+            self.dirty_pit(o_address);
+            self.update_bit(d_address, true);
+            self.update_pit(d_address, ino);
+            let mut raw_inode = self.get_raw_inode(ino);
+            for entry in raw_inode.data.iter_mut() {
+                if entry.address == o_address {
+                    entry.address = d_address;
+                    break;
+                }
+            }
+            self.update_raw_inode(raw_inode);
         }
-        // for entry in &self.journal.table {
-        //     let o_address = *entry.0;
-        //     let d_address = *entry.1;
-        //     let size = 0;
-        //     let ino = 0;
-        //     let mut data = vec![];
-        //     for i in o_address..o_address + size {
-        //         data.push(self.read_page(i, true));
-        //         let v_address = self.vam.get_virtual_address(i);
-        //         if v_address.is_some() {
-        //             self.vam.update_map(d_address + i, v_address.unwrap());
-        //         }
-        //         self.dirty_pit(i);
-        //     }
-        //     for i in d_address..d_address + size {
-        //         self.update_bit(i, true);
-        //         self.update_pit(i, ino);
-        //         self.write_page(i, data[(i - d_address) as usize], true);
-        //     }
-        //     let mut raw_inode = self.get_raw_inode(ino);
-        //     for entry in raw_inode.data.iter_mut() {
-        //         if entry.address == o_address {
-        //             entry.address = d_address;
-        //             break;
-        //         }
-        //     }
-        //     self.update_raw_inode(raw_inode);
-        // }
-        // self.bit_end_op();
-        // self.pit_end_op();
-        // self.erase_block(block_no, true);
-        // self.clear_journal();
+        self.bit_end_op();
+        self.pit_end_op();
+        self.erase_block(block_no, true);
+        self.erase_block_in_block_table(block_no);
+        self.clear_journal();
     }
 
     pub fn journal_begin_op(&mut self) {
@@ -928,16 +915,20 @@ mod test {
     #[test]
     fn gc() {
         let mut manager = init_test();
+        manager.allocate_inode();
         assert_eq!(manager.find_next_pos_to_write(10), 0);
+        manager.bit_begin_op();
+        manager.pit_begin_op();
         manager.update_bit(0, true);
         manager.update_pit(0, 1);
         manager.update_bit(1, true);
         manager.update_pit(1, 1);
+        manager.bit_end_op();
+        manager.pit_end_op();
         assert_eq!(manager.find_next_pos_to_write(10), 2);
         let gc_group = manager.gc.new_gc_event(GCStrategy::Forward);
         assert_eq!(gc_group.events[0], gc_event::GCEvent::Move(gc_event::MoveGCEvent{ index: 0, ino: 1, size: 2, o_address: 0, d_address: 128 }));
         assert_eq!(gc_group.events[1], gc_event::GCEvent::Erase(gc_event::EraseGCEvent{ index: 1, block_no: 0 }));
-        manager.allocate_inode();
         manager.forward_gc();
     }
 

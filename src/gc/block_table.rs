@@ -2,6 +2,7 @@
 // Block Table
 //
 
+use std::time::SystemTime;
 use crate::gc::gc_define::*;
 
 // Block Table Structure
@@ -130,8 +131,6 @@ impl BlockInfo {
             PageUsedStatus::Clean => self.clean_num += 1,
             PageUsedStatus::Dirty => {
                 self.dirty_num += 1;
-                self.reserved_offset += 1;
-                self.reserved_size -= 1;
             },
             PageUsedStatus::Busy(_) => {
                 self.dirty_num += 1;
@@ -161,6 +160,8 @@ impl BlockInfo {
         for _ in 0..128 {
             self.used_map.push(PageUsedStatus::Clean);
         }
+        self.erase_count += 1;
+        self.last_erase_time = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).ok().unwrap().as_secs() as u32;
     }
 
     pub fn get_utilize_ratio(&self) -> f32 {
