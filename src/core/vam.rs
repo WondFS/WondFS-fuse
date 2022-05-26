@@ -48,9 +48,9 @@ impl VAM {
     }
 
     pub fn insert_map(&mut self, address: u32, v_address: u32) {
-        if self.physical_address_table.contains_key(&address) {
-            panic!("VAM: insert map has exist");
-        }
+        // if self.physical_address_table.contains_key(&address) {
+            // panic!("VAM: insert map has exist");
+        // }
         self.physical_address_table.insert(address, v_address);
         self.virtual_address_table.insert(v_address, address);
     }

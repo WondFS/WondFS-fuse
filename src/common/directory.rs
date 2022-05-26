@@ -15,8 +15,6 @@ pub fn dir_lookup(inode: &inode_manager::InodeLink, name: String) -> Option<(u32
         if entry.ino == 0 {
             continue;
         }
-        debug!("aaa {}", entry.file_name);
-        debug!("aaa {}", name);
         if entry.file_name == name {
             return Some((entry.ino, i));
         }

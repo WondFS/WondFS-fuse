@@ -16,7 +16,6 @@ impl From<inode::InodeFileType> for fuser::FileType {
 }
 
 pub fn transfer_stat_to_attr(stat: inode::InodeStat) -> FileAttr {
-    trace!("stat size {} {}", stat.size, stat.size as u64);
     FileAttr {
         ino: stat.ino as u64,
         size: stat.size as u64,
