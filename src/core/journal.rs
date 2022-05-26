@@ -1,13 +1,19 @@
+//
+// Journal Region
+//
+
 use std::collections::HashMap;
 use crate::util::array;
 
+const MAGIC_NUMBER: u32 = 0x7777ffff;
+
+// Journal Storage Type
 pub enum JournalType {
     GC,
     None,
 }
 
-const MAGIC_NUMBER: u32 = 0x7777ffff;
-
+// Journal Region Main Structure
 pub struct Journal {
     pub table: HashMap<u32, u32>,
     pub sync: bool,
@@ -15,6 +21,7 @@ pub struct Journal {
     pub erase_block_no: u32,
 }
 
+// Journal Region Simple Interface Function
 impl Journal {
     pub fn new() -> Journal {
         Journal {
@@ -40,6 +47,38 @@ impl Journal {
         self.table.insert(o_address, address);
     }
 
+    pub fn need_sync(&self) -> bool {
+        if self.is_op {
+            return false;
+        }
+        self.sync
+    }
+
+    pub fn sync(&mut self) {
+        self.sync = false;
+    }
+
+    pub fn clear(&mut self) {
+        self.erase_block_no = 0;
+        self.table.clear();
+    }
+
+    pub fn begin_op(&mut self) {
+        self.is_op = true;
+    }
+
+    pub fn end_op(&mut self) {
+        self.is_op = false;
+    }
+}
+
+// Journal Region Main Interface Function
+impl Journal {
+    /// Encode Journal to block data for write in disk
+    /// param:
+    /// ()
+    /// return:
+    /// block data
     pub fn encode(&self) -> array::Array1::<u8> {
         let mut data = array::Array1::<u8>::new(128 * 4096);
         data.init(0);
@@ -77,30 +116,6 @@ impl Journal {
             index += 1;
         }
         data
-    }
-
-    pub fn need_sync(&self) -> bool {
-        if self.is_op {
-            return false;
-        }
-        self.sync
-    }
-
-    pub fn sync(&mut self) {
-        self.sync = false;
-    }
-
-    pub fn clear(&mut self) {
-        self.erase_block_no = 0;
-        self.table.clear();
-    }
-
-    pub fn begin_op(&mut self) {
-        self.is_op = true;
-    }
-
-    pub fn end_op(&mut self) {
-        self.is_op = false;
     }
 }
 
@@ -147,14 +162,34 @@ impl Iterator for DataRegion<'_> {
     }
 }
 
+// Journal Region Module Test
 #[cfg(test)]
 mod test {
-    use std::time::UNIX_EPOCH;
-
+    use crate::core::core_manager::CoreManager;
     use super::*;
 
     #[test]
     fn basics() {
-
+        let mut journal = Journal::new();
+        journal.set_erase_block_no(100);
+        journal.set_journal(0, 17);
+        journal.set_journal(10, 20);
+        journal.set_journal(8, 5);
+        let data = CoreManager::transfer(&journal.encode());
+        journal.clear();
+        let byte_1 = (data.get(0)[4] as u32) << 24;
+        let byte_2 = (data.get(0)[5] as u32) << 16;
+        let byte_3 = (data.get(0)[6] as u32) << 8;
+        let byte_4 = data.get(0)[7] as u32;
+        let erase_block_no = byte_1 + byte_2 + byte_3 + byte_4;
+        journal.set_erase_block_no(erase_block_no);
+        let iter = DataRegion::new(&data);
+        for (o_address, address) in iter {
+            journal.set_journal(o_address, address);
+        }
+        assert_eq!(journal.get_erase_block_no(), 100);
+        assert_eq!(*journal.table.get(&0).unwrap(), 17);
+        assert_eq!(*journal.table.get(&10).unwrap(), 20);
+        assert_eq!(*journal.table.get(&8).unwrap(), 5);
     }
 }

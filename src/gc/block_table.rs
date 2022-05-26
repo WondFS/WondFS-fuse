@@ -125,7 +125,7 @@ impl BlockInfo {
         match origin_status {
             PageUsedStatus::Clean => self.clean_num -= 1,
             PageUsedStatus::Dirty => self.dirty_num -= 1,
-            PageUsedStatus::Busy(_) => self.dirty_num -= 1,
+            PageUsedStatus::Busy(_) => self.used_num -= 1,
         }
         match status {
             PageUsedStatus::Clean => self.clean_num += 1,
@@ -133,7 +133,7 @@ impl BlockInfo {
                 self.dirty_num += 1;
             },
             PageUsedStatus::Busy(_) => {
-                self.dirty_num += 1;
+                self.used_num += 1;
                 self.reserved_offset += 1;
                 self.reserved_size -= 1;
             },
@@ -178,10 +178,10 @@ mod test {
     fn basics() {
         let mut table = BlockTable::new(32);
 
-        table.set_page(0, PageUsedStatus::Dirty);
-        table.set_page(0, PageUsedStatus::Dirty);
-        table.set_page(0, PageUsedStatus::Dirty);
-        table.set_page(0, PageUsedStatus::Dirty);
+        table.set_page(0, PageUsedStatus::Busy(0));
+        table.set_page(1, PageUsedStatus::Busy(0));
+        table.set_page(2, PageUsedStatus::Busy(0));
+        table.set_page(3, PageUsedStatus::Busy(0));
 
         assert_eq!(table.table[0].block_no, 0);
         assert_eq!(table.table[0].reserved_offset, 4);

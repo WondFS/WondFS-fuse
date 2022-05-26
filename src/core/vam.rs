@@ -1,11 +1,17 @@
+//
+// VAM Manager
+//
+
 use std::collections::HashMap;
 
+// VAM Manager Main Structure
 pub struct VAM {
     count: u32,
     physical_address_table: HashMap<u32, u32>, // physical -> virtual
     virtual_address_table: HashMap<u32, u32>,  // virtual -> physical
 }
 
+// VAM Manager Simple Interface Function
 impl VAM {
     pub fn new() -> VAM {
         VAM {
@@ -67,6 +73,7 @@ impl VAM {
     }
 }
 
+// VAM Manager Moudle Test
 #[cfg(test)]
 mod test {
     use super::*;

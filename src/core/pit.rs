@@ -120,8 +120,8 @@ impl PIT {
 impl PIT {
     fn choose_strategy(&self) -> PITStrategy {
         let num = self.table.len();
-        let multiples = self.page_num / num as u32;
-        if multiples > 2 {
+        let multiples =  num as f32 / self.page_num as f32;
+        if multiples < 0.5 {
             PITStrategy::Map
         } else {
             PITStrategy::Serial
@@ -250,6 +250,7 @@ impl Iterator for DataRegion<'_> {
     }
 }
 
+// PIT Region Module Test
 #[cfg(test)]
 mod test {
     use crate::core::core_manager::CoreManager;

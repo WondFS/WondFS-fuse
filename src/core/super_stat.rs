@@ -21,17 +21,18 @@ pub struct SuperStat {
     page_num_per_block: u32,
 }
 
+// Super Region Simple Interface Function
 impl SuperStat {
     pub fn new() -> SuperStat {
         SuperStat {
             magic_code: 0,
             block_num: 32,
             super_block_num: 1,
-            bit_block_num: 1,
-            pit_block_num: 1,
+            bit_block_num: 2,
+            pit_block_num: 2,
             journal_block_num: 1,
             kv_block_num: 4,
-            main_area_block_num: 20,
+            main_area_block_num: 18,
             reserved_block_num: 4,
             page_size: 4096,
             page_num_per_block: 128,

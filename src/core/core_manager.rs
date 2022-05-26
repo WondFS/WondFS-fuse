@@ -49,6 +49,7 @@ impl CoreManager {
         self.read_sb();
         self.read_bit();
         self.read_pit();
+        self.read_journal();
     }
 }
 
@@ -59,11 +60,21 @@ impl CoreManager {
 
 // Core Layer KV Module Function
 impl CoreManager {
+    /// Allocate a new inode in kv region
+    /// params:
+    /// ()
+    /// return:
+    /// new inode
     pub fn allocate_inode(&mut self) -> inode::Inode {
         let raw_inode = self.kv.allocate_inode();
         CoreManager::transfer_raw_inode_to_inode(&raw_inode)
     }
 
+    /// Get inode from kv region by ino
+    /// params:
+    /// ino: inode's ino
+    /// return:
+    /// inode
     pub fn get_inode(&mut self, ino: u32) -> inode::Inode {
         let mut raw_inode = self.kv.get_inode(ino);
         for entry in raw_inode.data.iter_mut() {
@@ -76,6 +87,11 @@ impl CoreManager {
         CoreManager::transfer_raw_inode_to_inode(&raw_inode)
     }
 
+    /// Update inode in kv region
+    /// params:
+    /// inode after modified
+    /// return:
+    /// ()
     pub fn update_inode(&mut self, inode: inode::Inode) {
         let mut inode = inode;
         for entry in inode.data.iter_mut() {
@@ -85,14 +101,29 @@ impl CoreManager {
         self.kv.update_inode(raw_inode);
     }
 
+    /// Delete inode in kv region
+    /// params:
+    /// ino
+    /// return:
+    /// ()
     pub fn delete_inode(&mut self, ino: u32) {
         self.kv.delete_inode(ino);
     }
 
+    /// Get raw inode from kv region by ino
+    /// params:
+    /// ino - raw inode's ino
+    /// return:
+    /// raw inode
     pub fn get_raw_inode(&mut self, ino: u32) -> raw_inode::RawInode {
         self.kv.get_inode(ino)
     }
 
+    /// Update raw inode in kv region
+    /// params:
+    /// raw inode after modified
+    /// return:
+    /// ()
     pub fn update_raw_inode(&mut self, raw_inode: raw_inode::RawInode) {
         self.kv.update_inode(raw_inode);
     }
@@ -215,6 +246,11 @@ impl CoreManager {
 
 // Core Layer Bit Region Function
 impl CoreManager {
+    /// Read BIT Region from disk and dispose logging
+    /// params:
+    /// ()
+    /// return:
+    /// ()
     pub fn read_bit(&mut self) {
         let mut data_1 = self.read_block(1, false);
         let data_2 = self.read_block(2, false);
@@ -234,8 +270,13 @@ impl CoreManager {
         self.set_bit(&data_1);
     }
 
+    /// Set bit in CoreManager and sync in gc 
+    /// params:
+    /// PIT Region data
+    /// return:
+    /// ()
     pub fn set_bit(&mut self, data: &array::Array1::<[u8; 4096]>) {
-        let iter = bit::DataRegion::new(&data, 20);
+        let iter = bit::DataRegion::new(&data, 18);
         for (block_no, segment) in iter {
             let bit_map = segment.used_map;
             self.bit.init_bit_segment(block_no, segment);
@@ -252,6 +293,12 @@ impl CoreManager {
         }
     }
 
+    /// Update bit in CoreManager and sync in gc
+    /// params:
+    /// address - page's address
+    /// status - pages's used status
+    /// return:
+    /// ()
     pub fn update_bit(&mut self, address: u32, status: bool) {
         self.bit.set_page(address, status);
         match status {
@@ -261,21 +308,44 @@ impl CoreManager {
         self.sync_bit();
     }
 
+    /// Update bit in CoreManager
+    /// params:
+    /// block_no - block's block number
+    /// time - block's last erase time
+    /// return:
+    /// ()
     pub fn set_last_erase_time(&mut self, block_no: u32, time: u32) {
         self.bit.set_last_erase_time(block_no, time);
         self.sync_bit();
     }
 
+    /// Update bit in CoreManager
+    /// params:
+    /// block_no - block's block number
+    /// count - block's erase count
+    /// return:
+    /// ()
     pub fn set_erase_count(&mut self, block_no: u32, count: u32) {
         self.bit.set_erase_count(block_no, count);
         self.sync_bit();
     }
 
+    /// Update bit in CoreManager
+    /// params:
+    /// block_no - block's block number
+    /// age - block's age
+    /// return:
+    /// ()
     pub fn set_average_age(&mut self, block_no: u32, age: u32) {
         self.bit.set_average_age(block_no, age);
         self.sync_bit();
     }
 
+    /// Sync bit in BIT Region if needed
+    /// params:
+    /// ()
+    /// return:
+    /// ()
     pub fn sync_bit(&mut self) {
         if self.bit.need_sync() {
             let data = self.bit.encode();
@@ -288,10 +358,20 @@ impl CoreManager {
         }
     }
 
+    /// Bit transaction start
+    /// params:
+    /// ()
+    /// return:
+    /// ()
     pub fn bit_begin_op(&mut self) {
         self.bit.begin_op();
     }
 
+    /// BIT transaction end
+    /// params:
+    /// ()
+    /// return:
+    /// ()
     pub fn bit_end_op(&mut self) {
         self.bit.end_op();
         self.sync_bit();
@@ -300,6 +380,7 @@ impl CoreManager {
 
 // Core Layer PIT Region Function
 impl CoreManager {
+    /// Read PIT region from disk and dispose logging
     pub fn read_pit(&mut self) {
         let mut data_1 = self.read_block(3, false);
         let data_2 = self.read_block(4, false);
@@ -487,7 +568,7 @@ impl CoreManager {
 impl CoreManager {
     fn read_page(&mut self, address: u32, is_main: bool) -> [u8; 4096] {
         if is_main {
-            self.buf_cache.read(0, address + 5 * 128)
+            self.buf_cache.read(0, address + 6 * 128)
         } else {
             self.buf_cache.read(0, address)
         }
@@ -512,7 +593,7 @@ impl CoreManager {
 
     fn write_page(&mut self, address: u32, data: [u8; 4096], is_main: bool) {
         if is_main  {
-            self.buf_cache.write(0, address + 5 * 128, data);
+            self.buf_cache.write(0, address + 6 * 128, data);
         } else {
             self.buf_cache.write(0, address, data);
         }
@@ -530,7 +611,7 @@ impl CoreManager {
 
     fn erase_block(&mut self, block_no: u32, is_main: bool) {
         if is_main {
-            self.buf_cache.erase(0, block_no + 5);
+            self.buf_cache.erase(0, block_no + 6);
         } else {
             self.buf_cache.erase(0, block_no);
         }
@@ -661,7 +742,7 @@ impl CoreManager {
     }
 }
 
-// 
+// Core Layer Util Function
 impl CoreManager {
     pub fn transfer_raw_inode_to_inode(raw_inode: &raw_inode::RawInode) -> inode::Inode {
         let file_type;
@@ -809,6 +890,7 @@ impl CoreManager {
     }
 }
 
+// Core Layer Module Test
 #[cfg(test)]
 mod test {
     use super::*;
