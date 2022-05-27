@@ -80,6 +80,9 @@ impl Inode {
         let mut len = len;
         let mut count = 0;
         let mut flag = false;
+        // if self.size == 0 {
+        //     return 0;
+        // }
         if offset >= self.size {
             return -1;
         }
@@ -405,11 +408,9 @@ impl Inode {
     }
 
     pub fn modify_stat(&mut self, stat: InodeStat) -> bool {
-        // trace!("modify stat function called");
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
         if stat.ino != self.ino {
-            // trace!("{}, {}", stat.ino, self.ino);
             panic!("Inode: modify stat can't change ino");
         }
         if stat.size != self.size {

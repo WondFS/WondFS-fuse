@@ -1,6 +1,6 @@
 extern crate fuser;
 use fuser::*;
-use std::{time::{UNIX_EPOCH, SystemTime, Duration}};
+use std::time::{UNIX_EPOCH, SystemTime, Duration};
 use crate::inode::inode;
 
 /// Transfer InodeFileType to fuser FileType

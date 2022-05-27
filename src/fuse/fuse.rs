@@ -73,6 +73,7 @@ impl Filesystem for WondFS {
             stat.last_metadata_changed = time_now();
             inode.borrow_mut().modify_stat(stat);
             directory::dir_link(&mut inode, FUSE_ROOT_ID as u32, ".".to_string());
+            self.inode_manager.i_put(inode);
         }
         Ok(())
     }
@@ -140,7 +141,7 @@ impl Filesystem for WondFS {
         }
     }
 
-    // Set file attributes
+    /// Set file attributes
     fn setattr(&mut self, _req: &Request<'_>, _ino: u64, _mode: Option<u32>, _uid: Option<u32>, _gid: Option<u32>, _size: Option<u64>, _atime: Option<TimeOrNow>, _mtime: Option<TimeOrNow>, _ctime: Option<std::time::SystemTime>, _fh: Option<u64>, _crtime: Option<std::time::SystemTime>, _chgtime: Option<std::time::SystemTime>, _bkuptime: Option<std::time::SystemTime>, _flags: Option<u32>, reply: ReplyAttr) {
         trace!("WondFS: setattr function called");
         let ino = _ino as u32;
@@ -215,16 +216,17 @@ impl Filesystem for WondFS {
         }
         let stat = inode.borrow().get_stat();
         let attr = transfer_stat_to_attr(stat);
+        self.inode_manager.i_put(inode);
         reply.attr(&TTL, &attr);
     }
 
-    // Create a file node.
+    /// Create a file node
     fn mknod(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, mut _mode: u32, _umask: u32, _rdev: u32, reply: ReplyEntry) {
         trace!("WondFS: mknod function called");
         let file_type = _mode & libc::S_IFMT as u32;
         if file_type != libc::S_IFREG as u32 && file_type != libc::S_IFDIR as u32 {
             debug!("WondFS: mknod implementation is incomplete. Only supports regular files, and directories. Got {:o}", _mode);
-            reply.error(libc::ENOSYS);
+            reply.error(ENOSYS);
             return;
         }
         let parent = _parent as u32;
@@ -263,7 +265,7 @@ impl Filesystem for WondFS {
         let mut inode = self.inode_manager.i_alloc();
         if inode.is_none() {
             debug!("WondFS: mknod alloc inode error");
-            reply.error(libc::ENOENT);
+            reply.error(ENOENT);
             return;
         }
         let ino = inode.as_ref().unwrap().borrow().ino;
@@ -271,13 +273,18 @@ impl Filesystem for WondFS {
         stat.file_type = as_file_kind(_mode);
         stat.size = 0;
         stat.ref_cnt = 0;
-        stat.n_link = 1;
         stat.mode = 0o777;
         stat.uid = 0;
         stat.gid = 0;
         stat.last_accessed = time_now();
         stat.last_modified = time_now();
         stat.last_metadata_changed = time_now();
+        if stat.file_type == inode::InodeFileType::File {
+            stat.n_link = 1;
+        }
+        if stat.file_type == inode::InodeFileType::Directory {
+            stat.n_link = 2;
+        }
         inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
         if inode.as_ref().unwrap().borrow().file_type == inode::InodeFileType::Directory {
             directory::dir_link(inode.as_mut().unwrap(), ino, ".".to_string());
@@ -304,7 +311,7 @@ impl Filesystem for WondFS {
             return;
         }
         if directory::dir_lookup(parent_inode.as_ref().unwrap(), name.clone()).is_some() {
-            reply.error(libc::ENOENT);
+            reply.error(ENOENT);
             debug!("WondFS: mkdir name has exist");
             return;
         }
@@ -333,7 +340,7 @@ impl Filesystem for WondFS {
         let mut inode = self.inode_manager.i_alloc();
         if inode.is_none() {
             debug!("WondFS: mknod alloc inode error");
-            reply.error(libc::ENOENT);
+            reply.error(ENOENT);
             return;
         }
         let ino = inode.as_ref().unwrap().borrow().ino;
@@ -359,7 +366,7 @@ impl Filesystem for WondFS {
         reply.entry(&TTL, &attr, 0);
     }
 
-    // Remove a file.
+    /// Remove a file
     fn unlink(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEmpty) {
         trace!("WondFS: unlink function called");
         let parent = _parent as u32;
@@ -373,7 +380,7 @@ impl Filesystem for WondFS {
         }
         let ino = directory::dir_lookup(parent_inode.as_ref().unwrap(), name.clone());
         if ino.is_none() {
-            reply.error(libc::ENOENT);
+            reply.error(ENOENT);
             debug!("WondFS: unlink name not exists");
             return;
         }
@@ -421,7 +428,7 @@ impl Filesystem for WondFS {
         stat.n_link -= 1;
         stat.last_metadata_changed = time_now();
         inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
-        if inode.as_ref().unwrap().borrow().n_link == 0 {
+        if inode.as_ref().unwrap().borrow().get_stat().n_link == 0 {
             inode.as_ref().unwrap().borrow_mut().delete();
         }
         self.inode_manager.i_put(parent_inode.unwrap());
@@ -429,7 +436,7 @@ impl Filesystem for WondFS {
         reply.ok();
     }
 
-    // Remove a directory.
+    /// Remove a directory
     fn rmdir(&mut self, _req: &Request<'_>, _parent: u64, _name: &std::ffi::OsStr, reply: ReplyEmpty) {
         trace!("WondFS: rmdir function called");
         let parent = _parent as u32;
@@ -583,11 +590,9 @@ impl Filesystem for WondFS {
                 //     debug!("WondFS: open no permission to access");
                 //     reply.error(ENOENT);
                 // }
-                let mut stat = inode.borrow_mut().get_stat();
-                stat.ref_cnt += 1;
-                inode.borrow_mut().modify_stat(stat);
-                reply.opened(self.allocate_next_file_handle(true, true), 1);
+                inode.borrow_mut().ref_cnt += 1;
                 self.inode_manager.i_put(inode);
+                reply.opened(self.allocate_next_file_handle(true, true), 1);
             },
             None => {
                 debug!("WondFS: open ino not exists");
@@ -626,7 +631,6 @@ impl Filesystem for WondFS {
                 } else {
                     reply.error(ENOENT);
                 }
-                // reply.data(&data);
             },
             None => {
                 debug!("WondFS: read ino not exists");
@@ -677,9 +681,7 @@ impl Filesystem for WondFS {
             reply.error(ENOENT);
             return;
         }
-        let mut stat = inode.as_ref().unwrap().borrow_mut().get_stat();
-        stat.ref_cnt -= 1;
-        inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
+        inode.as_ref().unwrap().borrow_mut().ref_cnt -= 1;
         self.inode_manager.i_put(inode.unwrap());
         reply.ok();
     }
@@ -689,23 +691,23 @@ impl Filesystem for WondFS {
         trace!("WondFS: opendir function called");
         let ino = _ino as u32;
         trace!("WondFS: ino: {}", ino);
-        let (access_mask, read, write) = match _flags & libc::O_ACCMODE {
-            libc::O_RDONLY => {
-                if _flags & libc::O_TRUNC != 0 {
-                    debug!("WondFS: opendir access_mask error");
-                    reply.error(libc::EACCES);
-                    return;
-                }
-                (libc::R_OK, true, false)
-            }
-            libc::O_WRONLY => (libc::W_OK, false, true),
-            libc::O_RDWR => (libc::R_OK | libc::W_OK, true, true),
-            _ => {
-                debug!("WondFS: opendir access_mask error");
-                reply.error(libc::EINVAL);
-                return;
-            }
-        };
+        // let (access_mask, read, write) = match _flags & libc::O_ACCMODE {
+        //     libc::O_RDONLY => {
+        //         if _flags & libc::O_TRUNC != 0 {
+        //             debug!("WondFS: opendir access_mask error");
+        //             reply.error(libc::EACCES);
+        //             return;
+        //         }
+        //         (libc::R_OK, true, false)
+        //     }
+        //     libc::O_WRONLY => (libc::W_OK, false, true),
+        //     libc::O_RDWR => (libc::R_OK | libc::W_OK, true, true),
+        //     _ => {
+        //         debug!("WondFS: opendir access_mask error");
+        //         reply.error(libc::EINVAL);
+        //         return;
+        //     }
+        // };
         let inode = self.inode_manager.i_get(ino);
         match inode {
             Some(inode) => {
@@ -725,10 +727,8 @@ impl Filesystem for WondFS {
                 //     debug!("WondFS: opendir no permission to access");
                 //     reply.error(ENOENT);
                 // }
-                let mut stat = inode.borrow_mut().get_stat();
-                stat.ref_cnt += 1;
-                inode.borrow_mut().modify_stat(stat);
-                reply.opened(self.allocate_next_file_handle(read, write), 1);
+                inode.borrow_mut().ref_cnt += 1;
+                reply.opened(self.allocate_next_file_handle(true, true), 1);
                 self.inode_manager.i_put(inode);
             },
             None => {
@@ -753,6 +753,7 @@ impl Filesystem for WondFS {
         let mut data = vec![];
         inode.as_ref().unwrap().borrow_mut().read_all(&mut data);
         let iter = directory::DirectoryParser::new(&data);
+        // TOOD: something wrong
         for (index, entry) in iter.skip(offset as usize).enumerate() {
             let buffer_full: bool = reply.add(
                 entry.ino as u64,
@@ -764,6 +765,7 @@ impl Filesystem for WondFS {
                 break;
             }
         }
+        self.inode_manager.i_put(inode.unwrap());
         reply.ok()
     }
 
@@ -778,9 +780,7 @@ impl Filesystem for WondFS {
             reply.error(ENOENT);
             return;
         }
-        let mut stat = inode.as_ref().unwrap().borrow_mut().get_stat();
-        stat.ref_cnt -= 1;
-        inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
+        inode.as_ref().unwrap().borrow_mut().ref_cnt -= 1;
         self.inode_manager.i_put(inode.unwrap());
         reply.ok();
     }
@@ -802,6 +802,7 @@ impl Filesystem for WondFS {
         //     debug!("WondFS: access no permission to access");
         //     reply.error(libc::EACCES);
         // }
+        self.inode_manager.i_put(inode.unwrap());
         reply.ok();
     }
 
@@ -849,9 +850,9 @@ impl Filesystem for WondFS {
         stat.last_modified = time_now();
         stat.last_metadata_changed = time_now();
         parent_inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
-        if _req.uid() != 0 {
-            _mode &= !(libc::S_ISUID | libc::S_ISGID) as u32;
-        }
+        // if _req.uid() != 0 {
+        //     _mode &= !(libc::S_ISUID | libc::S_ISGID) as u32;
+        // }
         let mut inode = self.inode_manager.i_alloc();
         if inode.is_none() {
             debug!("WondFS: create inode alloc error");
@@ -863,13 +864,18 @@ impl Filesystem for WondFS {
         stat.file_type = as_file_kind(_mode);
         stat.size = 0;
         stat.ref_cnt = 1;
-        stat.n_link = 1;
         stat.mode = 0o777;
         stat.uid = 0;
         stat.gid = 0;
         stat.last_accessed = time_now();
         stat.last_modified = time_now();
         stat.last_metadata_changed = time_now();
+        if stat.file_type == inode::InodeFileType::File {
+            stat.n_link = 1;
+        }
+        if stat.file_type == inode::InodeFileType::Directory {
+            stat.n_link = 2;
+        }
         inode.as_ref().unwrap().borrow_mut().modify_stat(stat);
         if inode.as_ref().unwrap().borrow().file_type == inode::InodeFileType::Directory {
             directory::dir_link(inode.as_mut().unwrap(), ino, ".".to_string());
