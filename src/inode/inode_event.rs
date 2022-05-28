@@ -1,5 +1,6 @@
 use crate::inode::inode;
 
+// Indoe Modify Event Group Structure
 pub struct InodeEventGroup {
     pub inode: inode::Inode,
     pub need_delete: bool,
@@ -50,6 +51,7 @@ impl InodeEventGroup {
     }
 }
 
+// Inode Modify Event Structure
 #[derive(Clone, PartialEq, Debug)]
 pub enum InodeEvent {
     AddContent(AddContentInodeEvent),
@@ -75,6 +77,7 @@ impl InodeEvent {
     }
 }
 
+// Add Content Event Structure
 #[derive(Clone, PartialEq, Debug)]
 pub struct AddContentInodeEvent {
     pub index: u32,
@@ -84,6 +87,7 @@ pub struct AddContentInodeEvent {
     pub content: Vec<u8>,
 }
 
+// Truncate Content Event Structure
 #[derive(Clone, PartialEq, Debug)]
 pub struct TruncateContentInodeEvent {
     pub index: u32,
@@ -94,6 +98,7 @@ pub struct TruncateContentInodeEvent {
     pub v_address: u32,
 }
 
+// Change Content Event Structure
 #[derive(Clone, PartialEq, Debug)]
 pub struct ChangeContentInodeEvent {
     pub index: u32,
@@ -101,6 +106,7 @@ pub struct ChangeContentInodeEvent {
     pub v_address: u32,
 }
 
+// Delete Content Event Structure
 #[derive(Clone, PartialEq, Debug)]
 pub struct DeleteContentInodeEvent {
     pub index: u32,
@@ -108,6 +114,7 @@ pub struct DeleteContentInodeEvent {
     pub v_address: u32,
 }
 
+// Modify Stat Event Structure
 #[derive(Clone, PartialEq, Debug)]
 pub struct ModifyInodeStatInodeEvent {
     pub file_type: inode::InodeFileType,

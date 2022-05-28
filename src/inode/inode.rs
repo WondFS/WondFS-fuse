@@ -1,15 +1,20 @@
+//
+// Inode Layer
+//
+
 use std::sync::Mutex;
 use std::cmp::{max, min};
 use crate::inode::inode_event;
+use crate::inode::inode_manager;
 
-use super::inode_manager;
-
+// Inode File Type
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum InodeFileType {
-    File,
-    Directory,
+    File,       // 普通文件
+    Directory,  // 目录文件
 }
 
+// Inode Stat
 #[derive(Copy, Clone)]
 pub struct InodeStat {
     pub file_type: InodeFileType,
@@ -25,15 +30,17 @@ pub struct InodeStat {
     pub last_metadata_changed: (i64, u32),
 }
 
+// Inode Data Entry
 #[derive(Copy, Clone)]
 pub struct InodeEntry {
     pub valid: bool,
     pub offset: u32,
-    pub len: u32,           // 以Byte为单位
-    pub size: u32,          // 以Page为单位
+    pub len: u32,      // 以Byte为单位
+    pub size: u32,     // 以Page为单位
     pub address: u32,
 }
 
+// Inode Layer Main Structure
 pub struct Inode {
     pub file_type: InodeFileType,
     pub ino: u32,
@@ -51,6 +58,7 @@ pub struct Inode {
     pub core: Option<inode_manager::CoreLink>,
 }
 
+// Inode Layer Simple Interface Function
 impl Inode {
     pub fn new() -> Inode {
         Inode {
@@ -71,18 +79,56 @@ impl Inode {
         }
     }
 
+    pub fn copy_inode(&self) -> Inode {
+        Inode {
+            file_type: self.file_type,
+            ino: self.ino,
+            size: self.size,
+            uid: self.uid,
+            gid: self.gid,
+            n_link: self.n_link,
+            data: self.data.clone(),
+            ref_cnt: self.ref_cnt,
+            lock: Mutex::new(false),
+            core: None,
+            mode: self.mode,
+            last_accessed: self.last_accessed,
+            last_modified: self.last_modified,
+            last_metadata_changed: self.last_metadata_changed,
+        }
+    }
+
+    pub fn debug(&self) {
+        // println!("Inode::Debug:{}", self.ino);
+        // for (index, entry) in self.data.iter().enumerate() {
+        //     println!("{} offset: {} len: {} size: {} address: {} valid: {}", index, entry.offset, entry.len, entry.size, entry.address, entry.valid);
+        // }
+    }
+}
+
+// Inode Layer Main Interface Function
+impl Inode {
+    /// Read all data from inode
+    /// params:
+    /// buf - data buffer
+    /// return:
+    /// read data byte count
     pub fn read_all(&mut self, buf: &mut Vec<u8>) -> i32 {
         self.read(0, self.size, buf)
     }
 
+    /// Read data from inode
+    /// params:
+    /// offset - data offset
+    /// len - data len
+    /// buf - data buffer
+    /// return:
+    /// read data byte count
     pub fn read(&mut self, offset: u32, len: u32, buf: &mut Vec<u8>) -> i32 {
         buf.clear();
         let mut len = len;
         let mut count = 0;
         let mut flag = false;
-        // if self.size == 0 {
-        //     return 0;
-        // }
         if offset >= self.size {
             return -1;
         }
@@ -113,6 +159,13 @@ impl Inode {
         count
     }
 
+    /// Write data in inode
+    /// params:
+    /// offset - data offset
+    /// len - data len
+    /// buf - data buffer
+    /// return:
+    /// write if success
     pub fn write(&mut self, offset: u32, len: u32, buf: &Vec<u8>) -> bool {
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
@@ -211,6 +264,13 @@ impl Inode {
         true
     }
 
+    /// Insert data in inode
+    /// params:
+    /// offset - data offset
+    /// len - data len
+    /// buf - data buffer
+    /// return:
+    /// insert if success
     pub fn insert(&mut self, offset: u32, len: u32, buf: &Vec<u8>) -> bool {
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
@@ -312,6 +372,12 @@ impl Inode {
         true
     }
 
+    /// Truncate data in inode
+    /// params:
+    /// offset - truncate data offset
+    /// len - truncate data len
+    /// return:
+    /// truncate if success
     pub fn truncate(&mut self, offset: u32, len: u32) -> bool {
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
@@ -385,12 +451,20 @@ impl Inode {
         true
     }
 
+    /// Truncate data to end in inode
+    /// params:
+    /// offset - data offset
+    /// return:
+    /// truncate if success
     pub fn truncate_to_end(&mut self, offset: u32) -> bool {
         self.truncate(offset, self.size - offset)
     }
-}
 
-impl Inode {
+    /// Get inode stat
+    /// params:
+    /// ()
+    /// return:
+    /// inode stat
     pub fn get_stat(&self) -> InodeStat {
         InodeStat {
             file_type: self.file_type,
@@ -407,6 +481,11 @@ impl Inode {
         }
     }
 
+    /// Modify inode stat
+    /// params:
+    /// stat - inode stat
+    /// return:
+    /// modify stat if success
     pub fn modify_stat(&mut self, stat: InodeStat) -> bool {
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
@@ -430,6 +509,11 @@ impl Inode {
         true
     }
 
+    /// Add n_link to dup inode
+    /// params:
+    /// ()
+    /// return:
+    /// dup if success
     pub fn dup(&mut self) -> bool {
         let stat = InodeStat {
             file_type: self.file_type,
@@ -447,6 +531,11 @@ impl Inode {
         self.modify_stat(stat)
     }
 
+    /// Delete inode totally
+    /// params:
+    /// ()
+    /// return:
+    /// delete if success
     pub fn delete(&mut self) -> bool {
         let mut event_group = inode_event::InodeEventGroup::new();
         event_group.inode = self.copy_inode();
@@ -458,8 +547,9 @@ impl Inode {
     }
 }
 
+// Inode Layer Internal Function
 impl Inode {
-    pub fn read_entry(&mut self, entry: &InodeEntry, start: u32, end: u32) -> Vec<u8> {
+    fn read_entry(&mut self, entry: &InodeEntry, start: u32, end: u32) -> Vec<u8> {
         let start_index = start / 4096;
         let start_off = start % 4096;
         let end_index = (end - 1) / 4096;
@@ -489,7 +579,7 @@ impl Inode {
         res
     }
 
-    pub fn update_by_another_inode(&mut self, inode: Inode) {
+    fn update_by_another_inode(&mut self, inode: Inode) {
         self.file_type = inode.file_type;
         self.ino = inode.ino;
         self.size = inode.size;
@@ -499,34 +589,9 @@ impl Inode {
         self.n_link = inode.n_link;
         self.data = inode.data;
     }
-
-    pub fn copy_inode(&self) -> Inode {
-        Inode {
-            file_type: self.file_type,
-            ino: self.ino,
-            size: self.size,
-            uid: self.uid,
-            gid: self.gid,
-            n_link: self.n_link,
-            data: self.data.clone(),
-            ref_cnt: self.ref_cnt,
-            lock: Mutex::new(false),
-            core: None,
-            mode: self.mode,
-            last_accessed: self.last_accessed,
-            last_modified: self.last_modified,
-            last_metadata_changed: self.last_metadata_changed,
-        }
-    }
-
-    pub fn debug(&self) {
-        // println!("Inode::Debug:{}", self.ino);
-        // for (index, entry) in self.data.iter().enumerate() {
-        //     println!("{} offset: {} len: {} size: {} address: {} valid: {}", index, entry.offset, entry.len, entry.size, entry.address, entry.valid);
-        // }
-    }
 }
 
+// Inode Layer Module Test
 #[cfg(test)]
 mod test {
     use crate::inode::inode_manager;
